@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- `webwrap update <path>` updates a previously created app in place: it refreshes
+  the embedded engine (so apps built by an older webwrap get the latest fixes) and
+  can optionally change the URL, name, window size, or icon. The app's login session
+  is preserved, since the bundle identifier it's keyed to is kept stable. Refuses
+  non-webwrap bundles and confirms before changing anything (skip with `--force`).
 - Generated apps now have a standard macOS menu bar: an app menu with **Quit** and
   an **About** panel showing the wrapped URL and the webwrap version that created
   the app, plus a View menu (Reload, Back, Forward) and a Window menu.

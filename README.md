@@ -111,6 +111,29 @@ Outlook   https://outlook.office.com   /Applications
 
 It scans `/Applications` and `~/Applications`, identifying webwrap apps by a marker baked into their `Info.plist` — there's no separate registry to keep in sync. To remove an app, drag it to the Trash like any other.
 
+## Updating an app
+
+`webwrap update` refreshes an existing app in place — most usefully to give an app built by an older webwrap the latest engine (e.g. new menu/keyboard fixes), and optionally to change its settings. **The app's login session is preserved.**
+
+```sh
+# Refresh the embedded engine, keep everything else
+webwrap update "/Applications/Outlook.app"
+
+# Change settings (anything omitted is kept)
+webwrap update "/Applications/Outlook.app" --url https://outlook.office365.com --width 1400
+```
+
+| Option | Description |
+| --- | --- |
+| `-u, --url` | New URL |
+| `-n, --name` | New display name (renames the `.app`; session still carried over) |
+| `--icon` | New `.png`/`.icns` icon (existing icon kept if omitted) |
+| `--width`, `--height` | New window size |
+| `--sign`, `--notarize`, `--notary-profile`, `--no-sign` | Signing, same as `create` |
+| `--force` | Skip the confirmation prompt |
+
+The session survives because it's keyed to the app's bundle identifier, which `update` keeps stable even across a URL or name change. `update` refuses any bundle that isn't a webwrap app.
+
 ## Sharing generated apps with other Macs
 
 By default, generated apps are **ad-hoc signed** (`codesign --sign -`), which lets them run on the machine that built them. Apps you send to *other* Macs will trip Gatekeeper on first launch ("can't be opened because Apple cannot check it for malware"). Recipients can either **right-click the app → Open** (confirm once), or strip the quarantine flag with `xattr -dr com.apple.quarantine "/Applications/Whatever.app"`.
