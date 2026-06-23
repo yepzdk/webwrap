@@ -8,11 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Interactive `webwrap create`: run it without `--url`/`--name` and it prompts for
+  them, validates the URL, suggests a name from the site host, shows the resolved
+  icon source, and asks for confirmation before writing. Non-interactive input
+  (pipes, CI) still requires the flags and never prompts.
 - Smart icon resolution: when no `--icon` is given, webwrap now walks a chain of
   sources — web app manifest, `apple-touch-icon`, `<link rel="icon">`,
   `/favicon.ico`, and finally Google's favicon service — picking the
   highest-quality icon available instead of always using the favicon service.
-- Test suite (`swift test`) covering the icon-resolution parsing helpers; wired
+- Test suite (`swift test`) covering the icon-resolution and CLI helpers; wired
   into CI.
 
 ## [0.1.0] - 2026-06-23

@@ -46,6 +46,28 @@ webwrap create --url https://outlook.office.com --name "Outlook"
 
 This writes `Outlook.app` to `/Applications`, resolving the best available icon for the site automatically — it checks the web app manifest, `apple-touch-icon`, `<link rel="icon">`, and `/favicon.ico` (in that order), falling back to a favicon service.
 
+### Interactive mode
+
+Run `webwrap create` with no `--url`/`--name` and it prompts you:
+
+```sh
+$ webwrap create
+URL: https://outlook.office.com
+Name [Outlook]:
+Resolving icon…
+
+Summary
+  Name:        Outlook
+  URL:         https://outlook.office.com
+  Bundle ID:   dk.yepz.webwrap.outlook
+  Icon:        web app manifest
+  Destination: /Applications/Outlook.app
+
+Create this app? [Y/n]:
+```
+
+It validates the URL (re-prompting if it's not absolute), suggests a name from the site's host, shows where the icon came from, and asks you to confirm before writing anything. Piped or non-interactive input never prompts — pass `--url` and `--name` as flags there.
+
 ### Options
 
 | Option | Description | Default |
