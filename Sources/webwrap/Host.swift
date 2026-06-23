@@ -75,6 +75,11 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         webView.allowsBackForwardNavigationGestures = true
         window.contentView!.addSubview(webView)
 
+        // A real main menu is required for the standard editing shortcuts (⌘C/⌘V/⌘X/⌘A)
+        // to reach the focused web content — without it, paste silently does nothing.
+        // It also provides Quit and the About panel.
+        NSApp.mainMenu = buildMainMenu(appName: title)
+
         if let url = URL(string: urlString) {
             webView.load(URLRequest(url: url))
         }
@@ -84,6 +89,84 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
     }
+
+    // MARK: - Menu
+
+    private func buildMainMenu(appName: String) -> NSMenu {
+        let mainMenu = NSMenu()
+
+        // App menu: About, Hide, Quit.
+        let appItem = NSMenuItem()
+        mainMenu.addItem(appItem)
+        let appMenu = NSMenu()
+        appItem.submenu = appMenu
+        appMenu.addItem(withTitle: "About \(appName)", action: #selector(showAbout(_:)), keyEquivalent: "")
+            .target = self
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "Hide \(appName)", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        let hideOthers = appMenu.addItem(withTitle: "Hide Others",
+                                         action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
+        hideOthers.keyEquivalentModifierMask = [.command, .option]
+        appMenu.addItem(withTitle: "Show All", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "Quit \(appName)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+
+        // Edit menu: the standard responder-chain editing actions (this is what makes
+        // copy/paste/cut/select-all work inside the web view).
+        let editItem = NSMenuItem()
+        mainMenu.addItem(editItem)
+        let editMenu = NSMenu(title: "Edit")
+        editItem.submenu = editMenu
+        editMenu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        let redo = editMenu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
+        redo.keyEquivalentModifierMask = [.command, .shift]
+        editMenu.addItem(.separator())
+        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+
+        // View menu: reload and back/forward for the wrapped site.
+        let viewItem = NSMenuItem()
+        mainMenu.addItem(viewItem)
+        let viewMenu = NSMenu(title: "View")
+        viewItem.submenu = viewMenu
+        viewMenu.addItem(withTitle: "Reload", action: #selector(reloadPage(_:)), keyEquivalent: "r").target = self
+        viewMenu.addItem(.separator())
+        viewMenu.addItem(withTitle: "Back", action: #selector(goBack(_:)), keyEquivalent: "[").target = self
+        viewMenu.addItem(withTitle: "Forward", action: #selector(goForward(_:)), keyEquivalent: "]").target = self
+
+        // Window menu: Minimize/Zoom, registered so macOS manages window items.
+        let windowItem = NSMenuItem()
+        mainMenu.addItem(windowItem)
+        let windowMenu = NSMenu(title: "Window")
+        windowItem.submenu = windowMenu
+        windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        windowMenu.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
+        NSApp.windowsMenu = windowMenu
+
+        return mainMenu
+    }
+
+    @objc private func showAbout(_ sender: Any?) {
+        let appName = info("CFBundleName") ?? "WebWrap"
+        let version = info("CFBundleShortVersionString") ?? "1.0"
+        let credits = HostAbout.credits(url: info("WebWrapURL"),
+                                        creatorVersion: info("WebWrapCreatorVersion"))
+        let attributed = NSAttributedString(
+            string: credits,
+            attributes: [.font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)])
+        NSApp.orderFrontStandardAboutPanel(options: [
+            .applicationName: appName,
+            .applicationVersion: version,
+            .credits: attributed,
+        ])
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @objc private func reloadPage(_ sender: Any?) { webView.reload() }
+    @objc private func goBack(_ sender: Any?) { webView.goBack() }
+    @objc private func goForward(_ sender: Any?) { webView.goForward() }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
@@ -109,4 +192,21 @@ func runHost() {
     // Retain the delegate for the lifetime of the process.
     _ = Unmanaged.passRetained(delegate)
     app.run()
+}
+
+/// Pure text for the generated app's About panel. Kept free of AppKit so it's
+/// unit-testable.
+enum HostAbout {
+    static func credits(url: String?, creatorVersion: String?) -> String {
+        var lines: [String] = []
+        if let url, !url.isEmpty {
+            lines.append("Opens: \(url)")
+        }
+        if let creatorVersion, !creatorVersion.isEmpty {
+            lines.append("Created with webwrap \(creatorVersion)")
+        } else {
+            lines.append("Created with webwrap")
+        }
+        return lines.joined(separator: "\n")
+    }
 }
