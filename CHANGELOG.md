@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   to a flat PNG before building the iconset, which `sips` can upscale reliably.
 - A failed icon conversion now prints a warning instead of silently producing an
   app with the default icon.
+- Placeholder `data:` icon links (e.g. `<link rel="icon" href="data:,">`, as on
+  `example.com`) are now skipped rather than fetched and failed, so the resolver
+  falls through cleanly to the next source without a spurious warning.
 
 ## [0.1.0] - 2026-06-23
 

@@ -185,6 +185,23 @@ struct IconResolver {
 
     // MARK: - Pure helpers (no I/O — unit-tested directly)
 
+    /// Whether an href is a usable icon URL we should bother fetching. Rejects empty/
+    /// whitespace values and placeholder `data:` URIs that carry no real image (e.g.
+    /// `data:,` or `data:;base64,`), which some sites declare as `<link rel="icon">`.
+    /// Such an href would only fail conversion downstream, so we skip it and fall through.
+    static func isUsableIconHref(_ href: String) -> Bool {
+        let trimmed = href.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        if trimmed.lowercased().hasPrefix("data:") {
+            // Keep only data URIs that actually carry a payload after the comma.
+            guard let comma = trimmed.firstIndex(of: ",") else { return false }
+            let payload = trimmed[trimmed.index(after: comma)...]
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return !payload.isEmpty
+        }
+        return true
+    }
+
     /// Returns the `href` of the first `<link>` whose `rel` matches `rel`. With
     /// `prefix: true`, matches any rel token that *starts with* `rel` (so
     /// "apple-touch-icon" also catches "apple-touch-icon-precomposed").
@@ -195,7 +212,7 @@ struct IconResolver {
             let matched = prefix
                 ? tokens.contains { $0.hasPrefix(rel) }
                 : tokens.contains(rel)
-            if matched, let href = attribute("href", in: tag), !href.isEmpty {
+            if matched, let href = attribute("href", in: tag), isUsableIconHref(href) {
                 return href
             }
         }
@@ -210,7 +227,7 @@ struct IconResolver {
         for tag in metaTags(in: html) {
             // The "key" can be in either `property` (og) or `name` (twitter/og both seen).
             let key = (attribute("property", in: tag) ?? attribute("name", in: tag))?.lowercased()
-            guard let key, let content = attribute("content", in: tag), !content.isEmpty else { continue }
+            guard let key, let content = attribute("content", in: tag), isUsableIconHref(content) else { continue }
             switch key {
             case "og:image", "og:image:url": if ogImage == nil { ogImage = content }
             case "twitter:image", "twitter:image:src": if twitterImage == nil { twitterImage = content }
@@ -239,7 +256,7 @@ struct IconResolver {
             let tokens = relValue.split(separator: " ").map(String.init)
             // "icon", "shortcut icon", "mask-icon"… we only want raster icon rels.
             guard tokens.contains("icon") else { continue }
-            guard let href = attribute("href", in: tag), !href.isEmpty else { continue }
+            guard let href = attribute("href", in: tag), isUsableIconHref(href) else { continue }
             if let size = largestSize(in: attribute("sizes", in: tag)) {
                 if best == nil || size > best!.size { best = (size, href) }
             } else if fallback == nil {
@@ -257,7 +274,7 @@ struct IconResolver {
 
         var best: (score: Int, size: Int, href: String)?
         for icon in icons {
-            guard let src = icon["src"] as? String, !src.isEmpty else { continue }
+            guard let src = icon["src"] as? String, isUsableIconHref(src) else { continue }
             let size = largestSize(in: icon["sizes"] as? String) ?? 0
             let type = (icon["type"] as? String)?.lowercased() ?? ""
             // Prefer PNG; treat unknown type as neutral, SVG slightly lower (sips can't
