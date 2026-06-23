@@ -136,25 +136,19 @@ struct AppBuilder {
             throw RuntimeError("Icon must be a .png or .icns file.")
         }
 
-        // No icon supplied: try to fetch the site's favicon. On failure, skip
-        // (the app simply gets the default bundle icon).
-        if let png = try? fetchFavicon() {
-            let tmpPNG = (NSTemporaryDirectory() as NSString)
-                .appendingPathComponent("webwrap-favicon-\(UUID().uuidString).png")
-            try png.write(to: URL(fileURLWithPath: tmpPNG))
-            defer { try? fm.removeItem(atPath: tmpPNG) }
-            if (try? convertPNGtoICNS(png: tmpPNG, icns: dest)) == nil {
-                // Conversion failed (e.g. favicon too small / not square) — skip icon.
-            }
-        }
-    }
+        // No icon supplied: resolve the best icon for the site (manifest → link
+        // icon → favicon). Every step is best-effort; on any failure we skip the
+        // icon entirely and the app gets the default bundle icon.
+        guard let resolved = IconResolver(urlString: url)?.resolve() else { return }
 
-    private func fetchFavicon() throws -> Data? {
-        guard let host = URL(string: url)?.host else { return nil }
-        // Google's favicon service returns a clean, reliably-sized PNG.
-        let endpoint = "https://www.google.com/s2/favicons?sz=256&domain=\(host)"
-        guard let favURL = URL(string: endpoint) else { return nil }
-        return try Data(contentsOf: favURL)
+        let tmpImage = (NSTemporaryDirectory() as NSString)
+            .appendingPathComponent("webwrap-icon-\(UUID().uuidString).\(resolved.ext)")
+        try resolved.data.write(to: URL(fileURLWithPath: tmpImage))
+        defer { try? fm.removeItem(atPath: tmpImage) }
+        if (try? convertPNGtoICNS(png: tmpImage, icns: dest)) == nil {
+            // Conversion failed (e.g. image too small, not square, or a format sips
+            // can't read) — skip the icon rather than failing the whole build.
+        }
     }
 
     /// Converts a PNG to .icns using the built-in `sips` + `iconutil` tools.

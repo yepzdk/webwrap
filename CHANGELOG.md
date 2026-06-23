@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- Smart icon resolution: when no `--icon` is given, webwrap now walks a chain of
+  sources — web app manifest, `apple-touch-icon`, `<link rel="icon">`,
+  `/favicon.ico`, and finally Google's favicon service — picking the
+  highest-quality icon available instead of always using the favicon service.
+- Test suite (`swift test`) covering the icon-resolution parsing helpers; wired
+  into CI.
+
 ## [0.1.0] - 2026-06-23
 
 ### Added

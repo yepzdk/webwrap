@@ -44,7 +44,7 @@ Requires macOS 13 (Ventura) or later. Building from source additionally needs th
 webwrap create --url https://outlook.office.com --name "Outlook"
 ```
 
-This writes `Outlook.app` to `/Applications`, fetching the site's favicon as the icon automatically.
+This writes `Outlook.app` to `/Applications`, resolving the best available icon for the site automatically — it checks the web app manifest, `apple-touch-icon`, `<link rel="icon">`, and `/favicon.ico` (in that order), falling back to a favicon service.
 
 ### Options
 
@@ -54,7 +54,7 @@ This writes `Outlook.app` to `/Applications`, fetching the site's favicon as the
 | `-n, --name` | Display name of the app (required) | — |
 | `-o, --output` | Directory to write the `.app` into | `/Applications` |
 | `--bundle-id` | Bundle identifier | `dk.yepz.webwrap.<slug>` |
-| `--icon` | Path to a `.png` or `.icns` icon | site favicon |
+| `--icon` | Path to a `.png` or `.icns` icon | resolved from site |
 | `--width` | Initial window width (points) | `1200` |
 | `--height` | Initial window height (points) | `800` |
 | `--force` | Overwrite an existing `.app` | off |
