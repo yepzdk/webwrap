@@ -60,7 +60,18 @@ struct Create: ParsableCommand {
     @Flag(name: .long, help: "Skip ad-hoc code signing (codesign --sign -).")
     var noSign: Bool = false
 
+    @Option(name: .long, help: "Sign with a Developer ID identity, e.g. \"Developer ID Application: Name (TEAMID)\". Enables the hardened runtime.")
+    var sign: String?
+
+    @Flag(name: .long, help: "Notarize and staple the signed app with Apple. Requires --sign and --notary-profile.")
+    var notarize: Bool = false
+
+    @Option(name: .long, help: "Name of a `notarytool store-credentials` keychain profile, used with --notarize.")
+    var notaryProfile: String?
+
     func run() throws {
+        try Self.validateSigning(noSign: noSign, sign: sign, notarize: notarize, notaryProfile: notaryProfile)
+
         if let url, let name {
             // Both supplied — non-interactive path. Validate, then build directly.
             try Self.validate(url: url)
@@ -132,6 +143,7 @@ struct Create: ParsableCommand {
           URL:         \(resolvedURL)
           Bundle ID:   \(bundleIdentifier)
           Icon:        \(iconDescription)
+          Signing:     \(Self.signingDescription(noSign: noSign, sign: sign, notarize: notarize))
           Destination: \(destination)
         """)
 
@@ -155,6 +167,9 @@ struct Create: ParsableCommand {
             height: height,
             force: force,
             sign: !noSign,
+            signIdentity: sign,
+            notarize: notarize,
+            notaryProfile: notaryProfile,
             resolvedIcon: resolvedIcon
         )
         let appPath = try builder.build()
@@ -173,6 +188,27 @@ struct Create: ParsableCommand {
     static func validate(name: String) throws {
         guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw ValidationError("Name must not be empty.")
+        }
+    }
+
+    /// A short human description of what the signing flags will do, for the summary.
+    static func signingDescription(noSign: Bool, sign: String?, notarize: Bool) -> String {
+        if noSign { return "none (--no-sign)" }
+        guard let sign else { return "ad-hoc" }
+        return notarize ? "Developer ID + notarized (\(sign))" : "Developer ID (\(sign))"
+    }
+
+    /// Validates the signing/notarization flag combination. Pure — no I/O.
+    static func validateSigning(noSign: Bool, sign: String?, notarize: Bool, notaryProfile: String?) throws {
+        if noSign && sign != nil {
+            throw ValidationError("`--no-sign` and `--sign` are mutually exclusive.")
+        }
+        if notarize && sign == nil {
+            throw ValidationError("`--notarize` requires `--sign` (a Developer ID identity).")
+        }
+        if notarize && (notaryProfile?.isEmpty ?? true) {
+            throw ValidationError("`--notarize` requires `--notary-profile` "
+                + "(a `notarytool store-credentials` profile name).")
         }
     }
 

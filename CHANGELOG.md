@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- Developer ID signing and notarization for generated apps. `--sign "Developer ID
+  Application: …"` signs with a real identity and the hardened runtime; `--notarize`
+  (with `--notary-profile`) submits to Apple's notary service and staples the ticket,
+  so the app passes Gatekeeper on other Macs without a right-click or `xattr`. Without
+  these flags, ad-hoc signing is unchanged.
+
 ## [0.1.0] - 2026-06-23
 
 ### Added

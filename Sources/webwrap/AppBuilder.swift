@@ -9,7 +9,18 @@ struct AppBuilder {
     let width: Int
     let height: Int
     let force: Bool
+    /// Whether to sign at all. When false (`--no-sign`), the bundle is left unsigned.
     let sign: Bool
+    /// A Developer ID identity to sign with, e.g. "Developer ID Application: Name (TEAMID)".
+    /// When set, the bundle is signed with this identity and the hardened runtime instead
+    /// of an ad-hoc signature. When nil (and `sign` is true), an ad-hoc signature is used.
+    var signIdentity: String? = nil
+    /// Whether to notarize the signed bundle with Apple and staple the ticket. Requires
+    /// `signIdentity` and `notaryProfile`.
+    var notarize: Bool = false
+    /// Name of a `notarytool store-credentials` keychain profile used to authenticate
+    /// the notarization submission.
+    var notaryProfile: String? = nil
     /// An icon already resolved from the site (e.g. by the interactive flow, which
     /// resolves up front to show the source in its summary). When set, the builder
     /// uses these bytes instead of fetching again. `iconPath` still takes precedence.
@@ -59,6 +70,10 @@ struct AppBuilder {
 
         if sign {
             try codesign(appPath)
+        }
+
+        if notarize {
+            try notarizeAndStaple(appPath)
         }
 
         return appPath
@@ -220,10 +235,78 @@ struct AppBuilder {
     // MARK: - Signing
 
     private func codesign(_ appPath: String) throws {
-        // Ad-hoc signature (no Developer ID). Enough to satisfy Gatekeeper for a
-        // locally-built app; for distribution to others, sign with a real identity
-        // and notarize instead.
-        try run("/usr/bin/codesign", ["--force", "--deep", "--sign", "-", appPath], quiet: true)
+        if let signIdentity {
+            // Developer ID signature with the hardened runtime — required for
+            // notarization and standard for apps distributed to other Macs.
+            try run("/usr/bin/codesign",
+                    ["--force", "--deep", "--options", "runtime",
+                     "--sign", signIdentity, appPath],
+                    quiet: true)
+        } else {
+            // Ad-hoc signature (no Developer ID). Enough to satisfy Gatekeeper for a
+            // locally-built app; for distribution to others, sign with a real identity
+            // and notarize instead.
+            try run("/usr/bin/codesign", ["--force", "--deep", "--sign", "-", appPath], quiet: true)
+        }
+    }
+
+    // MARK: - Notarization
+
+    /// Submits the signed bundle to Apple's notary service and, on acceptance, staples
+    /// the ticket so the app passes Gatekeeper offline. Zips the bundle for submission
+    /// (notarytool requires an archive, not a raw `.app`).
+    private func notarizeAndStaple(_ appPath: String) throws {
+        guard let notaryProfile else {
+            throw RuntimeError("Notarization requires a --notary-profile.")
+        }
+
+        let zipPath = (NSTemporaryDirectory() as NSString)
+            .appendingPathComponent("webwrap-notarize-\(UUID().uuidString).zip")
+        defer { try? fm.removeItem(atPath: zipPath) }
+
+        // ditto preserves the bundle structure/symlinks that a plain zip would mangle.
+        print("Zipping for notarization…")
+        try run("/usr/bin/ditto", ["-c", "-k", "--keepParent", appPath, zipPath], quiet: true)
+
+        print("Submitting to Apple notary service (this can take a few minutes)…")
+        let (status, output) = try runCapturingAll(
+            "/usr/bin/xcrun",
+            ["notarytool", "submit", zipPath,
+             "--keychain-profile", notaryProfile,
+             "--wait"])
+
+        // notarytool prints a human summary including a "status: Accepted/Invalid" line.
+        guard status == 0, output.contains("status: Accepted") else {
+            // Pull the submission id so we can fetch the detailed log for the user.
+            let detail = submissionLog(from: output, profile: notaryProfile)
+            throw RuntimeError("""
+                Notarization failed.
+                \(output.trimmingCharacters(in: .whitespacesAndNewlines))
+                \(detail)
+                """)
+        }
+
+        print("Notarized. Stapling ticket…")
+        try run("/usr/bin/xcrun", ["stapler", "staple", appPath], quiet: true)
+    }
+
+    /// Best-effort retrieval of the detailed notary log for a failed submission, so the
+    /// error message tells the user *why* it was rejected rather than just "Invalid".
+    private func submissionLog(from submitOutput: String, profile: String) -> String {
+        // notarytool's output contains a line like "  id: <uuid>".
+        let id = submitOutput
+            .split(separator: "\n")
+            .compactMap { line -> String? in
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                guard trimmed.hasPrefix("id: ") else { return nil }
+                return String(trimmed.dropFirst(4))
+            }
+            .first
+        guard let id else { return "" }
+        let (_, log) = (try? runCapturingAll(
+            "/usr/bin/xcrun",
+            ["notarytool", "log", id, "--keychain-profile", profile])) ?? (1, "")
+        return log.isEmpty ? "" : "Notary log:\n\(log)"
     }
 
     // MARK: - Helpers
@@ -304,6 +387,24 @@ struct AppBuilder {
         proc.waitUntilExit()
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         return String(data: data, encoding: .utf8) ?? ""
+    }
+
+    /// Runs a process, capturing stdout and stderr together, and returns the exit status
+    /// alongside the combined output. Used for notarytool, where both the result summary
+    /// and any error detail matter and we don't want a nonzero exit to throw before we've
+    /// read the output.
+    private func runCapturingAll(_ launchPath: String, _ args: [String]) throws -> (Int32, String) {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: launchPath)
+        proc.arguments = args
+        let pipe = Pipe()
+        proc.standardOutput = pipe
+        proc.standardError = pipe
+        try proc.run()
+        // Read before waiting to avoid deadlock if the child fills the pipe buffer.
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        proc.waitUntilExit()
+        return (proc.terminationStatus, String(data: data, encoding: .utf8) ?? "")
     }
 }
 
