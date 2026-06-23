@@ -81,6 +81,9 @@ It validates the URL (re-prompting if it's not absolute), suggests a name from t
 | `--height` | Initial window height (points) | `800` |
 | `--force` | Overwrite an existing `.app` | off |
 | `--no-sign` | Skip ad-hoc code signing | off |
+| `--sign` | Sign with a Developer ID identity (enables the hardened runtime) | ad-hoc |
+| `--notarize` | Notarize and staple with Apple (requires `--sign` + `--notary-profile`) | off |
+| `--notary-profile` | `notarytool store-credentials` profile name for `--notarize` | — |
 
 ### Examples
 
@@ -110,12 +113,47 @@ It scans `/Applications` and `~/Applications`, identifying webwrap apps by a mar
 
 ## Sharing generated apps with other Macs
 
-Generated apps are **ad-hoc signed** (`codesign --sign -`), which lets them run on the machine that built them. Apps you send to *other* Macs will trip Gatekeeper on first launch ("can't be opened because Apple cannot check it for malware"). Recipients have two easy options:
+By default, generated apps are **ad-hoc signed** (`codesign --sign -`), which lets them run on the machine that built them. Apps you send to *other* Macs will trip Gatekeeper on first launch ("can't be opened because Apple cannot check it for malware"). Recipients can either **right-click the app → Open** (confirm once), or strip the quarantine flag with `xattr -dr com.apple.quarantine "/Applications/Whatever.app"`.
 
-- **Right-click the app → Open**, then confirm in the dialog (only needed once), or
-- Strip the quarantine flag: `xattr -dr com.apple.quarantine "/Applications/Whatever.app"`
+To remove that friction entirely, sign with a Developer ID and notarize. This requires a paid Apple Developer account.
 
-This is the same friction as any un-notarized indie app. To remove it entirely you'd need a paid Apple Developer account, a Developer ID certificate, and notarization — not currently built in (see the roadmap in `CLAUDE.md`). Pass `--no-sign` to skip ad-hoc signing altogether.
+### Sign with a Developer ID
+
+```sh
+webwrap create -u https://app.example.com -n "Example" \
+  --sign "Developer ID Application: Your Name (TEAMID)"
+```
+
+`--sign` replaces the ad-hoc signature with your Developer ID identity and enables the hardened runtime. Find your identity string with:
+
+```sh
+security find-identity -v -p codesigning
+```
+
+A Developer-ID-signed-but-unnotarized app still trips Gatekeeper — notarize it to clear that.
+
+### Notarize and staple
+
+First, store your App Store Connect credentials once as a keychain profile named `webwrap` (you'll need an [App Store Connect API key](https://appstoreconnect.apple.com): a `.p8` file plus its Key ID and Issuer ID):
+
+```sh
+xcrun notarytool store-credentials webwrap \
+  --key /path/to/AuthKey_XXXXXX.p8 \
+  --key-id YOUR_KEY_ID \
+  --issuer YOUR_ISSUER_ID
+```
+
+Then create with `--notarize`:
+
+```sh
+webwrap create -u https://app.example.com -n "Example" \
+  --sign "Developer ID Application: Your Name (TEAMID)" \
+  --notarize --notary-profile webwrap
+```
+
+webwrap signs the app, submits it to Apple's notary service (`notarytool submit --wait`), and on success staples the ticket. The result passes Gatekeeper with **no right-click and no `xattr`** on any Mac — verify with `spctl -a -vvv "Example.app"`. Notarization adds a few minutes while Apple processes the submission.
+
+Pass `--no-sign` to skip signing altogether. `--no-sign`/`--sign` are mutually exclusive, and `--notarize` requires both `--sign` and `--notary-profile`.
 
 ## License
 
