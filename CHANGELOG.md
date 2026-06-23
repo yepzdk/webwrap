@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-23
+
 ### Added
 - Developer ID signing and notarization for generated apps. `--sign "Developer ID
   Application: …"` signs with a real identity and the hardened runtime; `--notarize`
@@ -59,5 +61,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Test suite (`swift test`) covering `AppBuilder`'s pure helpers (slug, bundle id,
   `Info.plist` generation, XML escaping) plus the icon-resolution and CLI helpers.
 
-[Unreleased]: https://github.com/yepzdk/webwrap/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/yepzdk/webwrap/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/yepzdk/webwrap/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/yepzdk/webwrap/releases/tag/v0.1.0
