@@ -113,21 +113,25 @@ struct AppBuilder {
             executable: executable,
             iconFile: iconFile,
             width: width,
-            height: height
+            height: height,
+            creatorVersion: WebWrap.configuration.version
         )
     }
 
     /// Builds the bundle's `Info.plist` XML. Pure (no `self`, no I/O) so it can be
-    /// unit-tested directly.
+    /// unit-tested directly. `creatorVersion` is the webwrap version that created the
+    /// bundle, baked in so the generated app's About panel can report it.
     static func makeInfoPlist(name: String,
                               url: String,
                               bundleId: String,
                               executable: String,
                               iconFile: String,
                               width: Int,
-                              height: Int) -> String {
+                              height: Int,
+                              creatorVersion: String) -> String {
         let escapedName = xmlEscape(name)
         let escapedURL = xmlEscape(url)
+        let escapedCreator = xmlEscape(creatorVersion)
         return """
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -164,6 +168,8 @@ struct AppBuilder {
             <string>\(width)</string>
             <key>WebWrapHeight</key>
             <string>\(height)</string>
+            <key>WebWrapCreatorVersion</key>
+            <string>\(escapedCreator)</string>
         </dict>
         </plist>
         """

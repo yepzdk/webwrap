@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- Generated apps now have a standard macOS menu bar: an app menu with **Quit** and
+  an **About** panel showing the wrapped URL and the webwrap version that created
+  the app, plus a View menu (Reload, Back, Forward) and a Window menu.
+
+### Fixed
+- Clipboard shortcuts (⌘C/⌘V/⌘X/⌘A) now work inside generated apps. They previously
+  did nothing because the app shipped without a menu bar, so the editing actions had
+  nowhere to dispatch; the new Edit menu wires them into the responder chain.
+
 ## [0.2.0] - 2026-06-23
 
 ### Added
