@@ -13,6 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   (with `--notary-profile`) submits to Apple's notary service and staples the ticket,
   so the app passes Gatekeeper on other Macs without a right-click or `xattr`. Without
   these flags, ad-hoc signing is unchanged.
+- `og:image` / `twitter:image` as an icon source, slotted above the favicon
+  fallbacks. Only used when the image is close to square (within ~15% of 1:1) so
+  wide sharing banners don't get distorted into an icon.
+
+### Fixed
+- Generated apps no longer end up icon-less for sites whose only icon is a
+  multi-image `.ico` (e.g. a 64×64 `/favicon.ico`). The source is now normalized
+  to a flat PNG before building the iconset, which `sips` can upscale reliably.
+- A failed icon conversion now prints a warning instead of silently producing an
+  app with the default icon.
 
 ## [0.1.0] - 2026-06-23
 

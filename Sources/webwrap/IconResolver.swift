@@ -23,6 +23,7 @@ struct IconResolver {
         case manifest = "web app manifest"
         case appleTouchIcon = "apple-touch-icon"
         case linkIcon = "link icon"
+        case openGraphImage = "og:image"
         case faviconIco = "favicon.ico"
         case googleService = "favicon service"
     }
@@ -39,12 +40,18 @@ struct IconResolver {
     /// can supply canned responses and the resolver never touches the real network.
     typealias Fetch = (URL) -> Data?
 
+    /// Measures image bytes, returning (width, height) in pixels, or nil if undecodable.
+    /// Injected so the squareness guard is testable without `sips` or real images.
+    typealias Measure = (Data) -> (width: Int, height: Int)?
+
     let siteURL: URL
     let fetch: Fetch
+    let measure: Measure
 
-    init(siteURL: URL, fetch: @escaping Fetch) {
+    init(siteURL: URL, fetch: @escaping Fetch, measure: @escaping Measure = IconResolver.sipsMeasure) {
         self.siteURL = siteURL
         self.fetch = fetch
+        self.measure = measure
     }
 
     /// Convenience initializer using a real network fetch with a short timeout.
@@ -73,6 +80,35 @@ struct IconResolver {
         }
     }
 
+    /// Default image measurer: writes the bytes to a temp file and reads pixel dimensions
+    /// via `sips`. Returns nil if the bytes can't be decoded.
+    static func sipsMeasure(_ data: Data) -> (width: Int, height: Int)? {
+        let tmp = (NSTemporaryDirectory() as NSString)
+            .appendingPathComponent("webwrap-measure-\(UUID().uuidString)")
+        guard (try? data.write(to: URL(fileURLWithPath: tmp))) != nil else { return nil }
+        defer { try? FileManager.default.removeItem(atPath: tmp) }
+
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/sips")
+        proc.arguments = ["-g", "pixelWidth", "-g", "pixelHeight", tmp]
+        let pipe = Pipe()
+        proc.standardOutput = pipe
+        proc.standardError = FileHandle.nullDevice
+        guard (try? proc.run()) != nil else { return nil }
+        let out = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        proc.waitUntilExit()
+
+        func value(_ key: String) -> Int? {
+            for line in out.split(separator: "\n") {
+                let t = line.trimmingCharacters(in: .whitespaces)
+                if t.hasPrefix(key) { return Int(t.dropFirst(key.count).trimmingCharacters(in: .whitespaces)) }
+            }
+            return nil
+        }
+        guard let w = value("pixelWidth:"), let h = value("pixelHeight:") else { return nil }
+        return (w, h)
+    }
+
     // MARK: - Resolution chain
 
     /// Walks the source chain and returns the first usable icon, or nil if none found.
@@ -82,6 +118,7 @@ struct IconResolver {
         if let resolved = resolveFromManifest(html: html) { return resolved }
         if let resolved = resolveFromAppleTouchIcon(html: html) { return resolved }
         if let resolved = resolveFromLinkIcon(html: html) { return resolved }
+        if let resolved = resolveFromOpenGraphImage(html: html) { return resolved }
         if let resolved = resolveFromFaviconIco() { return resolved }
         if let resolved = resolveFromGoogleService() { return resolved }
         return nil
@@ -113,6 +150,20 @@ struct IconResolver {
               let data = fetch(iconURL)
         else { return nil }
         return Resolved(data: data, ext: Self.pathExtension(of: iconURL), source: .linkIcon)
+    }
+
+    /// Tries the page's `og:image` / `twitter:image` sharing image. These are often much
+    /// higher-resolution than a favicon, but are frequently wide 16:9 banners rather than
+    /// square icons — so we measure the fetched bytes and only use it when it's close to
+    /// square, otherwise fall through (a banner squashed to a square would distort).
+    private func resolveFromOpenGraphImage(html: String) -> Resolved? {
+        guard let href = Self.socialImageURL(in: html),
+              let imageURL = Self.resolveURL(href, against: siteURL),
+              let data = fetch(imageURL),
+              let (w, h) = measure(data),
+              Self.isSquareEnough(width: w, height: h)
+        else { return nil }
+        return Resolved(data: data, ext: Self.pathExtension(of: imageURL), source: .openGraphImage)
     }
 
     private func resolveFromFaviconIco() -> Resolved? {
@@ -149,6 +200,33 @@ struct IconResolver {
             }
         }
         return nil
+    }
+
+    /// Returns the URL from an `og:image` or `twitter:image` meta tag, preferring
+    /// `og:image`. Handles both `property=` (Open Graph) and `name=` (Twitter) forms.
+    static func socialImageURL(in html: String) -> String? {
+        var ogImage: String?
+        var twitterImage: String?
+        for tag in metaTags(in: html) {
+            // The "key" can be in either `property` (og) or `name` (twitter/og both seen).
+            let key = (attribute("property", in: tag) ?? attribute("name", in: tag))?.lowercased()
+            guard let key, let content = attribute("content", in: tag), !content.isEmpty else { continue }
+            switch key {
+            case "og:image", "og:image:url": if ogImage == nil { ogImage = content }
+            case "twitter:image", "twitter:image:src": if twitterImage == nil { twitterImage = content }
+            default: break
+            }
+        }
+        return ogImage ?? twitterImage
+    }
+
+    /// Whether an image's aspect ratio is close enough to square to use as an app icon
+    /// without distortion. Accepts a longer:shorter ratio up to ~1.15 (≈15% off square).
+    static func isSquareEnough(width: Int, height: Int, tolerance: Double = 0.15) -> Bool {
+        guard width > 0, height > 0 else { return false }
+        let longer = Double(max(width, height))
+        let shorter = Double(min(width, height))
+        return longer / shorter <= 1.0 + tolerance
     }
 
     /// Picks the highest-quality `<link rel="icon"|"shortcut icon">` href by `sizes`
@@ -228,11 +306,21 @@ struct IconResolver {
     /// tolerant scanner — we only need attributes off `<link>` elements, not a full
     /// HTML parse.
     static func linkTags(in html: String) -> [String] {
+        tags(in: html, named: "<link")
+    }
+
+    /// Extracts the raw text of every `<meta ...>` tag. Same tolerant scan as `linkTags`.
+    static func metaTags(in html: String) -> [String] {
+        tags(in: html, named: "<meta")
+    }
+
+    /// Shared scan: collects the text of every element whose opening matches `opening`
+    /// (case-insensitively) up to its closing `>`.
+    private static func tags(in html: String, named opening: String) -> [String] {
         var tags: [String] = []
         let lower = html.lowercased()
         var searchStart = lower.startIndex
-        while let open = lower.range(of: "<link", range: searchStart..<lower.endIndex) {
-            // Find the closing '>' for this tag in the original (case-preserving) string.
+        while let open = lower.range(of: opening, range: searchStart..<lower.endIndex) {
             guard let close = html.range(of: ">", range: open.lowerBound..<html.endIndex) else { break }
             tags.append(String(html[open.lowerBound..<close.upperBound]))
             searchStart = close.upperBound
