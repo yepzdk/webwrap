@@ -1,0 +1,51 @@
+name: Release
+
+# Builds a universal (arm64 + x86_64) release binary on tag push and attaches
+# a tarball to the GitHub release. The Homebrew formula downloads this tarball,
+# so end users never need Xcode or the Swift toolchain.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: swift --version
+
+      - name: Build universal release binary
+        run: |
+          swift build -c release --arch arm64 --arch x86_64
+          # The universal product path is stable across arches:
+          BIN=$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)
+          echo "BIN_PATH=$BIN/webwrap" >> "$GITHUB_ENV"
+
+      - name: Verify the binary is universal
+        run: lipo -info "$BIN_PATH"
+
+      - name: Package tarball
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          STAGE="webwrap-${VERSION}-macos-universal"
+          mkdir -p "$STAGE"
+          cp "$BIN_PATH" "$STAGE/webwrap"
+          cp README.md LICENSE "$STAGE/"
+          chmod +x "$STAGE/webwrap"
+          tar -czf "${STAGE}.tar.gz" "$STAGE"
+          shasum -a 256 "${STAGE}.tar.gz" | tee "${STAGE}.tar.gz.sha256"
+
+      - name: Attach to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            webwrap-*.tar.gz
+            webwrap-*.tar.gz.sha256
+          generate_release_notes: true

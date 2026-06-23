@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build (debug)
+        run: swift build
+      - name: Build (release)
+        run: swift build -c release
+      - name: Smoke test the CLI
+        run: |
+          .build/release/webwrap --version
+          .build/release/webwrap create \
+            --url https://example.com --name "CI Test" --output "$RUNNER_TEMP" --force --no-sign
+          test -d "$RUNNER_TEMP/CI Test.app/Contents/MacOS"
+          test -f "$RUNNER_TEMP/CI Test.app/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :WebWrapURL" "$RUNNER_TEMP/CI Test.app/Contents/Info.plist"
