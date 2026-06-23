@@ -197,18 +197,29 @@ struct AppBuilder {
             .appendingPathComponent("webwrap-icon-\(UUID().uuidString).\(resolved.ext)")
         try resolved.data.write(to: URL(fileURLWithPath: tmpImage))
         defer { try? fm.removeItem(atPath: tmpImage) }
-        if (try? convertPNGtoICNS(png: tmpImage, icns: dest)) == nil {
-            // Conversion failed (e.g. image too small, not square, or a format sips
-            // can't read) — skip the icon rather than failing the whole build.
+        do {
+            try convertPNGtoICNS(png: tmpImage, icns: dest)
+        } catch {
+            // Conversion failed (e.g. a format sips can't read) — skip the icon rather
+            // than failing the whole build, but make it visible instead of mysterious.
+            FileHandle.standardError.write(Data(
+                "⚠ Found an icon (\(resolved.source.rawValue)) but couldn't convert it to .icns — the app will use the default icon.\n".utf8))
         }
     }
 
-    /// Converts a PNG to .icns using the built-in `sips` + `iconutil` tools.
+    /// Converts a source image to .icns using the built-in `sips` + `iconutil` tools.
     private func convertPNGtoICNS(png: String, icns dest: String) throws {
         let work = (NSTemporaryDirectory() as NSString)
             .appendingPathComponent("webwrap-\(UUID().uuidString).iconset")
         try fm.createDirectory(atPath: work, withIntermediateDirectories: true)
         defer { try? fm.removeItem(atPath: work) }
+
+        // Normalize the source to a flat PNG first. sips can fail to upscale the larger
+        // iconset sizes (512/1024) directly from a multi-image .ico (e.g. a 64×64
+        // /favicon.ico), which leaves the iconset incomplete and makes iconutil refuse
+        // to build the .icns. Resizing from a single-image PNG avoids that entirely.
+        let flat = (work as NSString).appendingPathComponent("source.png")
+        try run("/usr/bin/sips", ["-s", "format", "png", png, "--out", flat], quiet: true)
 
         // Standard iconset sizes. sips upscales/downscales as needed.
         let sizes: [(Int, String)] = [
@@ -226,9 +237,11 @@ struct AppBuilder {
 
         for (size, fileName) in sizes {
             let out = (work as NSString).appendingPathComponent(fileName)
-            try run("/usr/bin/sips", ["-z", "\(size)", "\(size)", png, "--out", out], quiet: true)
+            try run("/usr/bin/sips", ["-z", "\(size)", "\(size)", flat, "--out", out], quiet: true)
         }
 
+        // The flat source isn't a valid iconset entry name; remove it before iconutil.
+        try? fm.removeItem(atPath: flat)
         try run("/usr/bin/iconutil", ["-c", "icns", work, "-o", dest], quiet: true)
     }
 
