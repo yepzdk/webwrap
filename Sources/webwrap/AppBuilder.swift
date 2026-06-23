@@ -91,6 +91,26 @@ struct AppBuilder {
     // MARK: - Info.plist
 
     private func makeInfoPlist(executable: String, iconFile: String) -> String {
+        Self.makeInfoPlist(
+            name: name,
+            url: url,
+            bundleId: resolvedBundleId(),
+            executable: executable,
+            iconFile: iconFile,
+            width: width,
+            height: height
+        )
+    }
+
+    /// Builds the bundle's `Info.plist` XML. Pure (no `self`, no I/O) so it can be
+    /// unit-tested directly.
+    static func makeInfoPlist(name: String,
+                              url: String,
+                              bundleId: String,
+                              executable: String,
+                              iconFile: String,
+                              width: Int,
+                              height: Int) -> String {
         let escapedName = xmlEscape(name)
         let escapedURL = xmlEscape(url)
         return """
@@ -105,7 +125,7 @@ struct AppBuilder {
             <key>CFBundleExecutable</key>
             <string>\(executable)</string>
             <key>CFBundleIdentifier</key>
-            <string>\(resolvedBundleId())</string>
+            <string>\(bundleId)</string>
             <key>CFBundleIconFile</key>
             <string>\(iconFile)</string>
             <key>CFBundlePackageType</key>
@@ -247,7 +267,9 @@ struct AppBuilder {
         try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: path)
     }
 
-    private func xmlEscape(_ s: String) -> String {
+    /// Escapes the five XML predefined entities. Ampersand is replaced first so the
+    /// `&` it introduces in the other replacements isn't double-escaped.
+    static func xmlEscape(_ s: String) -> String {
         s.replacingOccurrences(of: "&", with: "&amp;")
             .replacingOccurrences(of: "<", with: "&lt;")
             .replacingOccurrences(of: ">", with: "&gt;")

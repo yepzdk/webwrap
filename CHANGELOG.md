@@ -16,8 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   sources — web app manifest, `apple-touch-icon`, `<link rel="icon">`,
   `/favicon.ico`, and finally Google's favicon service — picking the
   highest-quality icon available instead of always using the favicon service.
-- Test suite (`swift test`) covering the icon-resolution and CLI helpers; wired
-  into CI.
+- Test suite (`swift test`) covering `AppBuilder`'s pure helpers (slug, bundle id,
+  `Info.plist` generation, XML escaping) plus the icon-resolution and CLI helpers;
+  wired into CI.
 
 ## [0.1.0] - 2026-06-23
 
