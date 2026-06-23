@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- `webwrap list` subcommand: shows the wrapped apps installed in `/Applications`
+  and `~/Applications` along with the URL each opens. Apps are identified by a
+  marker in their `Info.plist`, so there's no separate registry to maintain.
 - Interactive `webwrap create`: run it without `--url`/`--name` and it prompts for
   them, validates the URL, suggests a name from the site host, shows the resolved
   icon source, and asks for confirmation before writing. Non-interactive input

@@ -6,9 +6,21 @@ struct WebWrap: ParsableCommand {
         commandName: "webwrap",
         abstract: "Wrap any website into a standalone macOS .app.",
         version: "0.1.0",
-        subcommands: [Create.self],
+        subcommands: [Create.self, List.self],
         defaultSubcommand: Create.self
     )
+}
+
+struct List: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "list",
+        abstract: "List the webwrap apps installed on this Mac."
+    )
+
+    func run() throws {
+        let apps = AppRegistry.discover()
+        print(AppRegistry.renderTable(apps))
+    }
 }
 
 struct Create: ParsableCommand {

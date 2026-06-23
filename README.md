@@ -93,6 +93,21 @@ webwrap create -u https://app.example.com -n "Example" \
 webwrap create -u https://chat.openai.com -n "ChatGPT" -o ~/Applications --force
 ```
 
+## Listing your apps
+
+`webwrap list` shows the wrapped apps installed on your Mac and the URL each points at — handy when Finder can't tell a webwrap app apart from any other:
+
+```sh
+$ webwrap list
+NAME      URL                          LOCATION
+ChatGPT   https://chat.openai.com      ~/Applications
+Outlook   https://outlook.office.com   /Applications
+
+2 apps
+```
+
+It scans `/Applications` and `~/Applications`, identifying webwrap apps by a marker baked into their `Info.plist` — there's no separate registry to keep in sync. To remove an app, drag it to the Trash like any other.
+
 ## Sharing generated apps with other Macs
 
 Generated apps are **ad-hoc signed** (`codesign --sign -`), which lets them run on the machine that built them. Apps you send to *other* Macs will trip Gatekeeper on first launch ("can't be opened because Apple cannot check it for malware"). Recipients have two easy options:
