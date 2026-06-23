@@ -10,6 +10,10 @@ struct AppBuilder {
     let height: Int
     let force: Bool
     let sign: Bool
+    /// An icon already resolved from the site (e.g. by the interactive flow, which
+    /// resolves up front to show the source in its summary). When set, the builder
+    /// uses these bytes instead of fetching again. `iconPath` still takes precedence.
+    var resolvedIcon: IconResolver.Resolved? = nil
 
     private let fm = FileManager.default
 
@@ -63,13 +67,25 @@ struct AppBuilder {
     // MARK: - Bundle identifier
 
     private func resolvedBundleId() -> String {
-        if let bundleId { return bundleId }
+        Self.defaultBundleId(name: name, override: bundleId)
+    }
+
+    /// Lowercases a display name and collapses runs of non-alphanumerics into single
+    /// hyphens, e.g. "Microsoft Outlook!" → "microsoft-outlook". Empty input → "app".
+    static func slug(from name: String) -> String {
         let slug = name
             .lowercased()
             .components(separatedBy: CharacterSet.alphanumerics.inverted)
             .filter { !$0.isEmpty }
             .joined(separator: "-")
-        return "dk.yepz.webwrap.\(slug.isEmpty ? "app" : slug)"
+        return slug.isEmpty ? "app" : slug
+    }
+
+    /// The bundle identifier for an app: the explicit `override` if given, otherwise
+    /// `dk.yepz.webwrap.<slug>` derived from the name.
+    static func defaultBundleId(name: String, override: String?) -> String {
+        if let override, !override.isEmpty { return override }
+        return "dk.yepz.webwrap.\(slug(from: name))"
     }
 
     // MARK: - Info.plist
@@ -136,10 +152,11 @@ struct AppBuilder {
             throw RuntimeError("Icon must be a .png or .icns file.")
         }
 
-        // No icon supplied: resolve the best icon for the site (manifest → link
-        // icon → favicon). Every step is best-effort; on any failure we skip the
-        // icon entirely and the app gets the default bundle icon.
-        guard let resolved = IconResolver(urlString: url)?.resolve() else { return }
+        // No icon path supplied: use a pre-resolved icon if the caller provided one
+        // (the interactive flow does, to show the source in its summary), otherwise
+        // resolve now (manifest → link icon → favicon). Every step is best-effort;
+        // on any failure we skip the icon and the app gets the default bundle icon.
+        guard let resolved = resolvedIcon ?? IconResolver(urlString: url)?.resolve() else { return }
 
         let tmpImage = (NSTemporaryDirectory() as NSString)
             .appendingPathComponent("webwrap-icon-\(UUID().uuidString).\(resolved.ext)")
