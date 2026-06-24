@@ -6,7 +6,7 @@ struct WebWrap: ParsableCommand {
         commandName: "webwrap",
         abstract: "Wrap any website into a standalone macOS .app.",
         version: "0.2.0",
-        subcommands: [Create.self, List.self],
+        subcommands: [Create.self, List.self, Update.self],
         defaultSubcommand: Create.self
     )
 }
@@ -20,6 +20,134 @@ struct List: ParsableCommand {
     func run() throws {
         let apps = AppRegistry.discover()
         print(AppRegistry.renderTable(apps))
+    }
+}
+
+struct Update: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "update",
+        abstract: "Update a previously created webwrap app in place.",
+        discussion: """
+        Refreshes the app's embedded engine with the current webwrap (so apps built \
+        with an older version get the latest fixes) and optionally changes its URL, \
+        name, window size, or icon. The app's login session is preserved.
+        """
+    )
+
+    @Argument(help: "Path to the .app bundle to update.")
+    var path: String
+
+    @Option(name: [.short, .long], help: "New URL for the app.")
+    var url: String?
+
+    @Option(name: [.short, .long], help: "New display name for the app.")
+    var name: String?
+
+    @Option(name: .long, help: "New icon (.png or .icns). If omitted, the existing icon is kept.")
+    var icon: String?
+
+    @Option(name: .long, help: "New initial window width in points.")
+    var width: Int?
+
+    @Option(name: .long, help: "New initial window height in points.")
+    var height: Int?
+
+    @Flag(name: .long, help: "Skip ad-hoc code signing.")
+    var noSign: Bool = false
+
+    @Option(name: .long, help: "Sign with a Developer ID identity (enables the hardened runtime).")
+    var sign: String?
+
+    @Flag(name: .long, help: "Notarize and staple. Requires --sign and --notary-profile.")
+    var notarize: Bool = false
+
+    @Option(name: .long, help: "notarytool store-credentials profile for --notarize.")
+    var notaryProfile: String?
+
+    @Flag(name: .long, help: "Don't prompt for confirmation before modifying the app.")
+    var force: Bool = false
+
+    func run() throws {
+        try Create.validateSigning(noSign: noSign, sign: sign, notarize: notarize, notaryProfile: notaryProfile)
+
+        let appPath = (path as NSString).standardizingPath
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: appPath) else {
+            throw ValidationError("No such app: \(appPath)")
+        }
+        // Refuse anything that isn't a webwrap app, so we never clobber other bundles.
+        guard let existing = AppConfig.read(fromBundle: appPath) else {
+            throw ValidationError("\(appPath) is not a webwrap app (no WebWrapURL in its Info.plist).")
+        }
+
+        if let url { try Create.validate(url: url) }
+        if let name { try Create.validate(name: name) }
+
+        let merged = existing.applying(url: url, name: name, width: width, height: height)
+        let outputDir = (appPath as NSString).deletingLastPathComponent
+        let renamed = merged.name != existing.name
+
+        // Summary of what will change.
+        var changes: [String] = ["Refresh the embedded webwrap engine"]
+        if url != nil, merged.url != existing.url { changes.append("URL → \(merged.url)") }
+        if renamed { changes.append("Name → \(merged.name) (bundle renamed)") }
+        if merged.width != existing.width || merged.height != existing.height {
+            changes.append("Size → \(merged.width)×\(merged.height)")
+        }
+        if icon != nil { changes.append("Icon → \(icon!)") }
+        print("Updating \(existing.name) at \(appPath):")
+        for c in changes { print("  • \(c)") }
+
+        if !force {
+            guard Prompt.isInteractive else {
+                throw ValidationError("Pass --force to update non-interactively.")
+            }
+            guard Prompt.confirm("\nApply these changes?", defaultYes: true) else {
+                throw CleanExit.message("Aborted — no changes made.")
+            }
+        }
+
+        // When no new icon is given, preserve the existing one by copying the bundle's
+        // AppIcon.icns to a temp file and feeding it back as the icon path (the build
+        // removes and recreates the bundle, so we must capture it first).
+        var iconForBuild = icon
+        var tmpIcon: String?
+        if icon == nil {
+            let icns = (appPath as NSString).appendingPathComponent("Contents/Resources/AppIcon.icns")
+            if let data = fm.contents(atPath: icns) {
+                let tmp = (NSTemporaryDirectory() as NSString)
+                    .appendingPathComponent("webwrap-keepicon-\(UUID().uuidString).icns")
+                try data.write(to: URL(fileURLWithPath: tmp))
+                iconForBuild = tmp
+                tmpIcon = tmp
+            }
+        }
+        defer { if let tmpIcon { try? fm.removeItem(atPath: tmpIcon) } }
+
+        // Rebuild in place. Passing the EXISTING bundle id keeps the data store key
+        // stable, so the app's login session survives. force:true because we're
+        // intentionally overwriting the bundle we just read.
+        let builder = AppBuilder(
+            url: merged.url,
+            name: merged.name,
+            outputDir: outputDir,
+            bundleId: existing.bundleId,
+            iconPath: iconForBuild,
+            width: merged.width,
+            height: merged.height,
+            force: true,
+            sign: !noSign,
+            signIdentity: sign,
+            notarize: notarize,
+            notaryProfile: notaryProfile
+        )
+        let newPath = try builder.build()
+
+        // On rename the new bundle has a different name; remove the old one.
+        if renamed, (newPath as NSString).standardizingPath != appPath {
+            try? fm.removeItem(atPath: appPath)
+        }
+        print("✓ Updated \(newPath)")
     }
 }
 
