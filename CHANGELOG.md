@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **Copy Current URL** (Edit menu, ⌘⇧C) copies the current page's address — handy
   since the window has no address bar. Disabled when no page is loaded.
 
+### Changed
+- The View menu's **Back** and **Forward** items now disable when there's no history
+  to go to, matching the navigation toolbar buttons.
+
 ## [0.3.0] - 2026-06-24
 
 ### Added

@@ -299,12 +299,20 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         pasteboard.setString(url, forType: .string)
     }
 
-    // Disable "Copy Current URL" when there's no loaded page to copy.
+    // Enable/disable our self-targeted menu items to match what's actually possible:
+    // Copy Current URL needs a loaded page; Back/Forward need history (consistent with
+    // the toolbar buttons). Items targeting other responders fall through to `true`.
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        if menuItem.action == #selector(copyCurrentURL(_:)) {
+        switch menuItem.action {
+        case #selector(copyCurrentURL(_:)):
             return HostNavigation.urlToCopy(currentURL: webView?.url) != nil
+        case #selector(goBack(_:)):
+            return webView?.canGoBack ?? false
+        case #selector(goForward(_:)):
+            return webView?.canGoForward ?? false
+        default:
+            return true
         }
-        return true
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
