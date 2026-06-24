@@ -53,21 +53,22 @@ struct IconResolver {
         /// meant for constrained spaces like an app label), then `name`. Nil if neither
         /// is present or both are blank.
         var preferredName: String? {
-            for candidate in [shortName, name] {
-                if let candidate, !candidate.trimmingCharacters(in: .whitespaces).isEmpty {
-                    return candidate.trimmingCharacters(in: .whitespaces)
-                }
-            }
-            return nil
+            Self.firstNonBlank(shortName, name)
         }
 
         /// The color to paint the window with to avoid a white first-paint flash:
         /// `background_color` (whose spec purpose is exactly the launch background),
         /// falling back to `theme_color`. Nil if neither is set.
         var launchBackgroundColor: String? {
-            for candidate in [backgroundColor, themeColor] {
-                if let candidate, !candidate.trimmingCharacters(in: .whitespaces).isEmpty {
-                    return candidate.trimmingCharacters(in: .whitespaces)
+            Self.firstNonBlank(backgroundColor, themeColor)
+        }
+
+        /// The first argument that is non-nil and not blank, trimmed. (`parseMetadata`
+        /// already trims/nils-empties, but a directly-constructed value might not.)
+        private static func firstNonBlank(_ candidates: String?...) -> String? {
+            for candidate in candidates {
+                if let trimmed = candidate?.trimmingCharacters(in: .whitespaces), !trimmed.isEmpty {
+                    return trimmed
                 }
             }
             return nil

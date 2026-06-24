@@ -84,14 +84,17 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         webView.allowsBackForwardNavigationGestures = true
         window.contentView!.addSubview(webView)
 
-        // Paint the window (and the web view's own backing) with the manifest's
+        // Paint the window and the web view's under-page area with the manifest's
         // background color so the first frame isn't a white flash before the page
         // renders. Skipped when there's no color or it isn't a form we parse.
+        // `underPageBackgroundColor` is the public API for this (macOS 12+, so always
+        // available at our 13 deployment target) — avoid the `drawsBackground` KVC
+        // trick, which reaches a private ivar and raises on current WebKit SDKs.
         if let raw = info("WebWrapBackgroundColor"), let rgba = CSSColor.parse(raw) {
             let color = NSColor(red: rgba.red, green: rgba.green,
                                 blue: rgba.blue, alpha: rgba.alpha)
             window.backgroundColor = color
-            webView.setValue(false, forKey: "drawsBackground") // let the window color show through
+            webView.underPageBackgroundColor = color
         }
 
         // A real main menu is required for the standard editing shortcuts (⌘C/⌘V/⌘X/⌘A)
