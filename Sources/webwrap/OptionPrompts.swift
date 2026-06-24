@@ -88,62 +88,77 @@ enum PromptContext {
     case update
 }
 
-/// Walks the option prompts in order, each seeded from `seed`, and returns the filled-in
-/// values. Returns nil if the user aborts (EOF). Reads real stdin via `Prompt`, so — like
-/// `Prompt` itself — it carries no business logic worth unit-testing; the seed/implication
-/// logic it relies on lives in the pure `OptionDefaults` above.
+/// Total steps in the full interactive flow, used for the `[Step n/total]` indicator.
+/// URL (1) and Name (2) are prompted by the caller; `promptForOptions` covers 3–8.
+/// Conditional follow-ups (off-domain, notarize) nest under their parent step rather than
+/// taking their own number, so the denominator is stable.
+let interactiveStepCount = 8
+
+/// Walks the option prompts (steps 3–8) in order, each seeded from `seed`, with a step
+/// header + help text, and returns the filled-in values. Returns nil if the user cancels
+/// (types q / Ctrl-D) at any step. Reads real stdin via `Prompt`, so — like `Prompt`
+/// itself — it carries no business logic worth unit-testing; the seed/implication logic it
+/// relies on lives in the pure `OptionDefaults` above.
 func promptForOptions(seed: OptionSeed, context: PromptContext) -> OptionSeed? {
     var result = seed
+    let total = interactiveStepCount
 
-    // Window size.
+    // Step 3 — window size.
+    Prompt.step(3, of: total, title: "Window size",
+                help: "The window's initial width and height in points.")
     guard let width = Prompt.askWithDefault(
         "Window width (points)", default: seed.width, defaultDisplay: "\(seed.width)",
         validate: intValidator) else { return nil }
     result.width = width
-
     guard let height = Prompt.askWithDefault(
         "Window height (points)", default: seed.height, defaultDisplay: "\(seed.height)",
         validate: intValidator) else { return nil }
     result.height = height
 
-    // Toolbar.
-    result.toolbar = Prompt.confirm("Show navigation toolbar (back/forward/reload)?",
-                                    defaultYes: seed.toolbar)
+    // Step 4 — toolbar.
+    Prompt.step(4, of: total, title: "Toolbar",
+                help: "A back/forward/reload bar in the title area.\nOff keeps the chromeless look.")
+    guard let toolbar = Prompt.confirmOrCancel(
+        "Show navigation toolbar?", defaultYes: seed.toolbar) else { return nil }
+    result.toolbar = toolbar
 
-    // URL handling, and the conditional off-domain follow-up.
-    result.handleURLs = Prompt.confirm(
-        "Open URLs the app is launched with (register as an http/https handler)?",
-        defaultYes: seed.handleURLs)
-    if result.handleURLs {
-        result.openAnyURL = Prompt.confirm(
-            "Accept off-domain URLs too (default: only same-site)?",
-            defaultYes: seed.openAnyURL)
+    // Step 5 — URL handling, and the conditional off-domain follow-up.
+    Prompt.step(5, of: total, title: "URL handling",
+                help: "Register the app as an http/https handler so links opened\nfrom other apps (e.g. Choosy) load in it. Off by default.")
+    guard let handleURLs = Prompt.confirmOrCancel(
+        "Open URLs the app is launched with?", defaultYes: seed.handleURLs) else { return nil }
+    result.handleURLs = handleURLs
+    if handleURLs {
+        guard let openAny = Prompt.confirmOrCancel(
+            "  └ Accept off-domain URLs too (default: only same-site)?",
+            defaultYes: seed.openAnyURL) else { return nil }
+        result.openAnyURL = openAny
     } else {
         result.openAnyURL = false
     }
 
-    // Background color (hex), validated through CSSColor. Empty keeps the seed/none.
+    // Step 6 — background color.
+    Prompt.step(6, of: total, title: "Background color",
+                help: "A hex color (e.g. #1a73e8) painted behind the page to avoid\na white flash on launch. Blank for none.")
     let bgDefaultDisplay = seed.backgroundColor ?? "none"
     guard let background = Prompt.askWithDefault(
-        "Window background color (hex, blank for none)",
-        default: seed.backgroundColor, defaultDisplay: bgDefaultDisplay,
+        "Window background color", default: seed.backgroundColor, defaultDisplay: bgDefaultDisplay,
         validate: colorValidator) else { return nil }
     result.backgroundColor = background
 
-    // Icon path. Empty means resolve-from-site (create) or keep-existing (update).
-    let iconDefaultDisplay: String
-    if let iconPath = seed.iconPath {
-        iconDefaultDisplay = iconPath
-    } else {
-        iconDefaultDisplay = context == .create ? "resolve from site" : "keep existing"
-    }
+    // Step 7 — icon.
+    let iconBlankMeans = context == .create ? "resolve from the site" : "keep the existing icon"
+    Prompt.step(7, of: total, title: "Icon",
+                help: "Path to a .png or .icns file. Blank to \(iconBlankMeans).")
+    let iconDefaultDisplay = seed.iconPath ?? (context == .create ? "resolve from site" : "keep existing")
     guard let iconPath = Prompt.askWithDefault(
-        "Icon path (.png or .icns, blank to \(context == .create ? "auto-resolve" : "keep"))",
-        default: seed.iconPath, defaultDisplay: iconDefaultDisplay,
+        "Icon path", default: seed.iconPath, defaultDisplay: iconDefaultDisplay,
         validate: iconValidator) else { return nil }
     result.iconPath = iconPath
 
-    // Signing: ad-hoc by default; opt into Developer ID, then notarization.
+    // Step 8 — signing.
+    Prompt.step(8, of: total, title: "Signing",
+                help: "Ad-hoc signing works for local use. Developer ID + notarization\nis for distributing the app to others.")
     guard let signing = promptForSigning(seed: seed) else { return nil }
     result.noSign = signing.noSign
     result.signIdentity = signing.signIdentity
@@ -158,18 +173,16 @@ func promptForOptions(seed: OptionSeed, context: PromptContext) -> OptionSeed? {
 private func promptForSigning(seed: OptionSeed)
     -> (noSign: Bool, signIdentity: String?, notarize: Bool, notaryProfile: String?)? {
     // Default posture: ad-hoc (sign with `-`), unless the seed says otherwise.
-    let wantDevID = Prompt.confirm(
+    guard let wantDevID = Prompt.confirmOrCancel(
         "Sign with a Developer ID identity (otherwise ad-hoc)?",
-        defaultYes: seed.signIdentity != nil)
+        defaultYes: seed.signIdentity != nil) else { return nil }
     guard wantDevID else {
-        // Ad-hoc is the default; nothing more to ask. (noSign stays whatever the seed had,
-        // which is false for both create and update — i.e. ad-hoc sign.)
-        return (noSign: seed.noSign && seed.signIdentity == nil ? seed.noSign : false,
-                signIdentity: nil, notarize: false, notaryProfile: nil)
+        // Ad-hoc is the default; nothing more to ask.
+        return (noSign: false, signIdentity: nil, notarize: false, notaryProfile: nil)
     }
 
     guard let identity = Prompt.askWithDefault(
-        "Developer ID identity",
+        "  └ Developer ID identity",
         default: seed.signIdentity, defaultDisplay: seed.signIdentity ?? "(required)",
         validate: { input in
             input.isEmpty ? .invalid("Identity must not be empty.") : .valid(input)
@@ -179,13 +192,14 @@ private func promptForSigning(seed: OptionSeed)
         return (noSign: false, signIdentity: nil, notarize: false, notaryProfile: nil)
     }
 
-    let wantNotarize = Prompt.confirm("Notarize and staple with Apple?", defaultYes: seed.notarize)
+    guard let wantNotarize = Prompt.confirmOrCancel(
+        "  └ Notarize and staple with Apple?", defaultYes: seed.notarize) else { return nil }
     guard wantNotarize else {
         return (noSign: false, signIdentity: identity, notarize: false, notaryProfile: nil)
     }
 
     guard let profile = Prompt.askWithDefault(
-        "notarytool store-credentials profile",
+        "  └ notarytool store-credentials profile",
         default: seed.notaryProfile, defaultDisplay: seed.notaryProfile ?? "(required)",
         validate: { input in
             input.isEmpty ? .invalid("Profile name must not be empty.") : .valid(input)

@@ -50,21 +50,28 @@ From the same web app manifest, `webwrap` also picks up a couple of smart defaul
 
 ### Interactive mode
 
-Run `webwrap create` with no `--url`/`--name` and it walks you through **every** option — window size, toolbar, URL handling, background color, icon, and signing — each pre-filled with a sensible default (or with any flag you did pass):
+Run `webwrap create` with no `--url`/`--name` and it walks you through **every** option as a numbered series of steps, each with a one-line explanation and pre-filled with a sensible default (or with any flag you did pass). Press Enter to accept a default, or type `q` to cancel at any point:
 
 ```sh
 $ webwrap create
+webwrap — create a macOS app from a website
+Press Enter to accept the [default]. Type q to cancel.
+
+[Step 1/8] Website URL
+  The address the app opens, e.g. https://github.com.
 URL: https://outlook.office.com
-Name [Outlook]:
 Resolving icon…
 
-Window width (points) [1200]:
-Window height (points) [800]:
-Show navigation toolbar (back/forward/reload)? [y/N]:
-Open URLs the app is launched with (register as an http/https handler)? [y/N]:
-Window background color (hex, blank for none) [from manifest]:
-Icon path (.png or .icns, blank to auto-resolve) [resolve from site]:
-Sign with a Developer ID identity (otherwise ad-hoc)? [y/N]:
+[Step 2/8] App name
+  The display name and the .app filename.
+Name [Outlook]:
+
+[Step 4/8] Toolbar
+  A back/forward/reload bar in the title area.
+  Off keeps the chromeless look.
+Show navigation toolbar? [y/N]:
+
+… (steps 3, 5–8: window size, URL handling, background, icon, signing) …
 
 Summary
   Name:        Outlook

@@ -114,13 +114,20 @@ struct Update: ParsableCommand {
         var buildNotaryProfile = notaryProfile
 
         if mode == .interactive {
-            print("Updating \(existing.name) — current settings shown as defaults.\n")
-            // URL + name first (seeded from the current values).
-            let resolvedURL = Prompt.lineWithDefault("URL", default: existing.url)
+            Prompt.intro("Updating \(existing.name) — current settings shown as defaults.")
+            // Steps 1–2 — URL + name, seeded from the current values.
+            Prompt.step(1, of: interactiveStepCount, title: "Website URL",
+                        help: "The address the app opens.")
+            guard let resolvedURL = Prompt.lineWithDefault("URL", default: existing.url) else {
+                throw CleanExit.message("Aborted — no changes made.")
+            }
             try Create.validate(url: resolvedURL)
-            let resolvedName = Prompt.lineWithDefault("Name", default: existing.name)
+            Prompt.step(2, of: interactiveStepCount, title: "App name",
+                        help: "The display name; changing it renames the .app (session is kept).")
+            guard let resolvedName = Prompt.lineWithDefault("Name", default: existing.name) else {
+                throw CleanExit.message("Aborted — no changes made.")
+            }
             try Create.validate(name: resolvedName)
-            print("")
             guard let seed = promptForOptions(seed: OptionDefaults.forUpdate(existing: existing),
                                               context: .update) else {
                 throw CleanExit.message("Aborted — no changes made.")
@@ -342,51 +349,57 @@ struct Create: ParsableCommand {
     // MARK: - Interactive flow
 
     private func runInteractive(presetURL: String?, presetName: String?) throws {
-        print("webwrap — create a macOS app from a website\n")
+        Prompt.intro("webwrap — create a macOS app from a website")
 
-        // 1. URL (re-prompt until valid).
+        // Step 1 — URL (re-prompt until valid).
         let resolvedURL: String
         if let presetURL { resolvedURL = presetURL } else {
+            Prompt.step(1, of: interactiveStepCount, title: "Website URL",
+                        help: "The address the app opens, e.g. https://github.com.")
             guard let entered = Prompt.ask("URL: ", validate: { input -> Prompt.Validation<String> in
                 do { try Self.validate(url: input); return .valid(input) }
                 catch { return .invalid("\(error)") }
-            }) else { throw CleanExit.message("Aborted.") }
+            }) else { throw CleanExit.message("Aborted — nothing was written.") }
             resolvedURL = entered
         }
 
-        // 2. Resolve the icon + manifest metadata up front (one network pass) so the
-        // name step can default from the manifest and the summary can report the icon.
+        // Resolve the icon + manifest metadata up front (one network pass) so the name step
+        // can default from the manifest and the summary can report the icon.
         print("Resolving icon…")
         let site = resolveSite(url: resolvedURL)
 
-        // 3. Name. Prefer an explicit --name; otherwise suggest from the manifest
+        // Step 2 — Name. Prefer an explicit --name; otherwise suggest from the manifest
         // (short_name/name), then fall back to the host-label guess.
         let resolvedName: String
         if let presetName { resolvedName = presetName } else {
+            Prompt.step(2, of: interactiveStepCount, title: "App name",
+                        help: "The display name and the .app filename.")
             let suggestion = site.metadata.preferredName
                 ?? Self.suggestName(fromURL: resolvedURL)
                 ?? ""
             if suggestion.isEmpty {
                 guard let entered = Prompt.ask("Name: ", validate: { input -> Prompt.Validation<String> in
                     input.isEmpty ? .invalid("Name must not be empty.") : .valid(input)
-                }) else { throw CleanExit.message("Aborted.") }
+                }) else { throw CleanExit.message("Aborted — nothing was written.") }
                 resolvedName = entered
             } else {
-                resolvedName = Prompt.lineWithDefault("Name", default: suggestion)
+                guard let entered = Prompt.lineWithDefault("Name", default: suggestion) else {
+                    throw CleanExit.message("Aborted — nothing was written.")
+                }
+                resolvedName = entered
             }
         }
 
-        // 4. Prompt for the remaining options, seeded from the flags (and the manifest
+        // Steps 3–8 — the remaining options, seeded from the flags (and the manifest
         // background). An explicit --icon seeds the icon prompt; otherwise it auto-resolves.
-        print("")
         guard let seed = promptForOptions(seed: seedFromFlags(manifest: site.metadata),
                                           context: .create) else {
-            throw CleanExit.message("Aborted.")
+            throw CleanExit.message("Aborted — nothing was written.")
         }
         // The summary reports the actual resolved icon source when none was entered.
         let resolvedIcon = seed.iconPath == nil ? site.icon : nil
 
-        // 5. Summary + confirm.
+        // Summary + confirm.
         let bundleIdentifier = AppBuilder.defaultBundleId(name: resolvedName, override: bundleId)
         let destination = (output as NSString).appendingPathComponent("\(resolvedName).app")
         print("""
