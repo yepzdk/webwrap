@@ -390,6 +390,11 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     func userContentController(_ userContentController: WKUserContentController,
                                didReceive message: WKScriptMessage) {
         guard message.name == "webwrapRetry", let url = intendedURL else { return }
+        // The message handler is controller-wide, so the live site's JS could also post
+        // to it. Only honor Retry while the fallback page is showing (loadHTMLString with
+        // a nil base URL leaves the web view with no real URL), not from the live site.
+        let current = webView.url
+        guard current == nil || current?.scheme == "about" else { return }
         webView.load(URLRequest(url: url))
     }
 }
@@ -538,11 +543,15 @@ enum OfflineFallback {
     static func html(appName: String, host: String?, kind: Kind, backgroundColor: String?) -> String {
         let headline = escape(kind.headline)
         let message = escape(kind.message(host: host))
-        // When the manifest gave a background color, honor it for both schemes; else use
-        // neutral light/dark surfaces.
+        // When the manifest gave a background color, honor it; else use a neutral
+        // surface. Validate through CSSColor (hex only) before interpolating into the
+        // stylesheet — `escape()` is HTML-entity escaping and does nothing for a CSS
+        // context, so an unparsed value like "red; } .card { display:none" could break
+        // out of the declaration and deface the recovery UI. Gating on a parseable color
+        // also keeps this path consistent with the window-painting path in the host.
         let bgRule: String
-        if let backgroundColor, !backgroundColor.isEmpty {
-            bgRule = "background: \(escape(backgroundColor));"
+        if let backgroundColor, CSSColor.parse(backgroundColor) != nil {
+            bgRule = "background: \(backgroundColor);"
         } else {
             bgRule = "background: #fafafa;"
         }
