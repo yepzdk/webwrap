@@ -32,6 +32,16 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     /// fallback is shown via `loadHTMLString`.
     private var isShowingFallback = false
 
+    /// Whether the app accepts off-domain incoming URLs (from `--open-any-url`). When
+    /// false, only same-site URLs are loaded; off-domain ones are ignored.
+    private var allowAnyDomain = false
+    /// An incoming URL (from `open -a` / Choosy / the GetURL Apple Event) received
+    /// before the web view exists at cold launch. `applicationDidFinishLaunching` loads
+    /// this instead of the baked-in home page when set.
+    private var pendingIncomingURL: URL?
+    /// The app's own site host, used to scope incoming URLs to the same site.
+    private var appHost: String?
+
     private func info(_ key: String) -> String? {
         Bundle.main.object(forInfoDictionaryKey: key) as? String
     }
@@ -70,9 +80,26 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         return UUID(uuid: uuid)
     }
 
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // Resolve the domain-scoping inputs up front (they're baked-in plist constants),
+        // so a GetURL Apple Event arriving before didFinishLaunching is judged correctly.
+        appHost = (info("WebWrapURL")).flatMap { URL(string: $0)?.host }
+        allowAnyDomain = info("WebWrapOpenAnyURL") == "1"
+
+        // Register for the GetURL Apple Event (the older routing path some openers and
+        // Choosy configurations use). Runs before didFinishLaunching, so a URL passed at
+        // cold launch is captured as `pendingIncomingURL` before the home page loads.
+        NSAppleEventManager.shared().setEventHandler(
+            self,
+            andSelector: #selector(handleGetURLEvent(_:withReplyEvent:)),
+            forEventClass: AEEventClass(kInternetEventClass),
+            andEventID: AEEventID(kAEGetURL))
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         let urlString = info("WebWrapURL") ?? "about:blank"
         let title = info("CFBundleName") ?? "WebWrap"
+        // appHost / allowAnyDomain were already resolved in applicationWillFinishLaunching.
         let width = Double(info("WebWrapWidth") ?? "1200") ?? 1200
         let height = Double(info("WebWrapHeight") ?? "800") ?? 800
 
@@ -126,6 +153,15 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
 
         if let url = URL(string: urlString) {
             intendedURL = url
+        }
+
+        // If a URL was passed at cold launch (and it's acceptable), open that instead of
+        // the baked-in home page; otherwise load home.
+        if let pending = pendingIncomingURL, acceptableIncoming(pending) {
+            pendingIncomingURL = nil
+            isShowingFallback = false
+            webView.load(URLRequest(url: pending))
+        } else {
             loadIntendedURL()
         }
 
@@ -349,6 +385,46 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         true
     }
 
+    // MARK: - Incoming URLs (open the app with a URL)
+
+    // Modern AppKit URL-open entry point (e.g. `open -a "GitHub" <url>`, Choosy).
+    func application(_ application: NSApplication, open urls: [URL]) {
+        // Single-window model: navigate to the first acceptable URL, ignore the rest.
+        for url in urls where openIncoming(url) { return }
+    }
+
+    // Older GetURL Apple Event path, registered in applicationWillFinishLaunching.
+    @objc private func handleGetURLEvent(_ event: NSAppleEventDescriptor,
+                                         withReplyEvent reply: NSAppleEventDescriptor) {
+        guard let string = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
+              let url = URL(string: string)
+        else { return }
+        _ = openIncoming(url)
+    }
+
+    /// Routes an incoming URL: ignores non-web or off-domain URLs, navigates to
+    /// acceptable ones. Before the web view exists (cold launch), stashes it as pending
+    /// for `applicationDidFinishLaunching` to load. Returns whether it was accepted.
+    @discardableResult
+    private func openIncoming(_ url: URL) -> Bool {
+        guard acceptableIncoming(url) else { return false }
+        if webView == nil {
+            pendingIncomingURL = url
+        } else {
+            isShowingFallback = false
+            webView.load(URLRequest(url: url))
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        return true
+    }
+
+    /// Whether an incoming URL is a web URL we should load given the app's domain scope.
+    private func acceptableIncoming(_ url: URL) -> Bool {
+        HostNavigation.isWebURL(url)
+            && HostNavigation.shouldOpen(incomingHost: url.host, appHost: appHost,
+                                         allowAnyDomain: allowAnyDomain)
+    }
+
     // Handle target=_blank / window.open by loading in the same view rather than
     // silently dropping the navigation.
     func webView(_ webView: WKWebView,
@@ -445,6 +521,30 @@ enum HostNavigation {
     /// menu item is enabled, so the two can't disagree.
     static func urlToCopy(currentURL: URL?) -> String? {
         currentURL?.absoluteString
+    }
+
+    /// Whether an incoming URL (e.g. routed from Choosy or `open -a`) should be loaded
+    /// in this single-site wrapper. By default only same-site URLs are accepted — the
+    /// incoming host must equal the app's own host or be a subdomain of it — so a GitHub
+    /// app doesn't load `example.com`. `allowAnyDomain` (from `--open-any-url`) accepts
+    /// any http/https URL.
+    ///
+    /// Pure: no AppKit, takes the already-extracted hosts so it's directly testable.
+    static func shouldOpen(incomingHost: String?, appHost: String?, allowAnyDomain: Bool) -> Bool {
+        // Only ever navigate to real web URLs; the caller passes nil for non-http(s).
+        guard let incomingHost = incomingHost?.lowercased(), !incomingHost.isEmpty else { return false }
+        if allowAnyDomain { return true }
+        guard let appHost = appHost?.lowercased(), !appHost.isEmpty else { return false }
+        // Exact match, or a subdomain: "github.com" accepts "www.github.com" but the
+        // dot-boundary check rejects "notgithub.com".
+        return incomingHost == appHost || incomingHost.hasSuffix("." + appHost)
+    }
+
+    /// Whether `url` is an http/https URL we'd consider navigating to. Used to filter the
+    /// scheme before consulting `shouldOpen`.
+    static func isWebURL(_ url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased() else { return false }
+        return scheme == "http" || scheme == "https"
     }
 }
 

@@ -31,6 +31,12 @@ struct AppBuilder {
     /// can paint the window before first paint. Nil when unknown. Typically the site's
     /// manifest `background_color`/`theme_color`, resolved at create time.
     var backgroundColor: String? = nil
+    /// Whether the app registers as an http/https handler (CFBundleURLTypes) and
+    /// navigates to URLs it's opened with. Off by default. (`--handle-urls`.)
+    var handleURLs: Bool = false
+    /// When `handleURLs` is on, whether to accept off-domain incoming URLs too. When
+    /// false, only same-site URLs are loaded. (`--open-any-url`.)
+    var openAnyURL: Bool = false
 
     private let fm = FileManager.default
 
@@ -122,6 +128,8 @@ struct AppBuilder {
             height: height,
             showToolbar: showToolbar,
             backgroundColor: backgroundColor,
+            handleURLs: handleURLs,
+            openAnyURL: openAnyURL,
             creatorVersion: WebWrap.configuration.version
         )
     }
@@ -138,6 +146,8 @@ struct AppBuilder {
                               height: Int,
                               showToolbar: Bool,
                               backgroundColor: String? = nil,
+                              handleURLs: Bool = false,
+                              openAnyURL: Bool = false,
                               creatorVersion: String) -> String {
         let escapedName = xmlEscape(name)
         let escapedURL = xmlEscape(url)
@@ -153,6 +163,31 @@ struct AppBuilder {
             """
         } else {
             backgroundColorEntry = ""
+        }
+        // Register as an http/https viewer ONLY when handling URLs is enabled, so apps
+        // don't claim those schemes system-wide unless the user opted in. Emitted just
+        // before the closing </dict>.
+        let urlTypesEntry: String
+        if handleURLs {
+            urlTypesEntry = """
+                <key>CFBundleURLTypes</key>
+                <array>
+                    <dict>
+                        <key>CFBundleURLName</key>
+                        <string>\(bundleId)</string>
+                        <key>CFBundleTypeRole</key>
+                        <string>Viewer</string>
+                        <key>CFBundleURLSchemes</key>
+                        <array>
+                            <string>http</string>
+                            <string>https</string>
+                        </array>
+                    </dict>
+                </array>
+
+            """
+        } else {
+            urlTypesEntry = ""
         }
         return """
         <?xml version="1.0" encoding="UTF-8"?>
@@ -192,7 +227,11 @@ struct AppBuilder {
             <string>\(height)</string>
             <key>WebWrapToolbar</key>
             <string>\(showToolbar ? "1" : "0")</string>
-            \(backgroundColorEntry)<key>WebWrapCreatorVersion</key>
+            <key>WebWrapHandleURLs</key>
+            <string>\(handleURLs ? "1" : "0")</string>
+            <key>WebWrapOpenAnyURL</key>
+            <string>\(openAnyURL ? "1" : "0")</string>
+            \(backgroundColorEntry)\(urlTypesEntry)<key>WebWrapCreatorVersion</key>
             <string>\(escapedCreator)</string>
         </dict>
         </plist>

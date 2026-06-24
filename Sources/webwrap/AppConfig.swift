@@ -16,6 +16,12 @@ struct AppConfig: Equatable {
     /// white first-paint flash. Nil when unset. Derived from the site's manifest at
     /// create time; carried over on update.
     var backgroundColor: String?
+    /// Whether the app registers as an http/https handler and navigates to URLs it's
+    /// opened with (e.g. from Choosy). Off by default; `--handle-urls`.
+    var handleURLs: Bool
+    /// When `handleURLs` is on, whether off-domain incoming URLs are accepted too.
+    /// `--open-any-url`.
+    var openAnyURL: Bool
 
     /// Parses an existing app's `Info.plist` bytes into an `AppConfig`, or nil if the
     /// bundle isn't a webwrap app (no `WebWrapURL` marker) or can't be parsed. Pure.
@@ -29,14 +35,24 @@ struct AppConfig: Equatable {
         // Dimensions are stored as strings; fall back to the defaults if missing/garbled.
         let width = Int((dict["WebWrapWidth"] as? String) ?? "") ?? 1200
         let height = Int((dict["WebWrapHeight"] as? String) ?? "") ?? 800
-        // Stored as "1"/"0"; absent (older apps) means no toolbar.
-        let showToolbar = (dict["WebWrapToolbar"] as? String) == "1"
+        // Bool keys are stored as "1"/"0"; absent (older apps) means off.
+        let showToolbar = plistBool(dict["WebWrapToolbar"])
         // Optional; absent on older apps and sites without a manifest color.
         let backgroundColor = (dict["WebWrapBackgroundColor"] as? String)
             .flatMap { $0.isEmpty ? nil : $0 }
+        let handleURLs = plistBool(dict["WebWrapHandleURLs"])
+        let openAnyURL = plistBool(dict["WebWrapOpenAnyURL"])
         return AppConfig(url: url, name: name, bundleId: bundleId,
                          width: width, height: height, showToolbar: showToolbar,
-                         backgroundColor: backgroundColor)
+                         backgroundColor: backgroundColor,
+                         handleURLs: handleURLs, openAnyURL: openAnyURL)
+    }
+
+    /// Reads a `WebWrap*` boolean plist value, stored as the string "1"/"0". Absent or
+    /// any non-"1" value reads as false. Centralizes the convention shared by all the
+    /// bool keys (toolbar, handle-urls, open-any-url).
+    static func plistBool(_ value: Any?) -> Bool {
+        (value as? String) == "1"
     }
 
     /// Reads the `AppConfig` from a bundle on disk, or nil if it isn't a webwrap app.
@@ -53,7 +69,9 @@ struct AppConfig: Equatable {
     func applying(url: String? = nil, name: String? = nil,
                   width: Int? = nil, height: Int? = nil,
                   showToolbar: Bool? = nil,
-                  backgroundColor: String?? = nil) -> AppConfig {
+                  backgroundColor: String?? = nil,
+                  handleURLs: Bool? = nil,
+                  openAnyURL: Bool? = nil) -> AppConfig {
         AppConfig(
             url: url ?? self.url,
             name: name ?? self.name,
@@ -62,6 +80,8 @@ struct AppConfig: Equatable {
             height: height ?? self.height,
             showToolbar: showToolbar ?? self.showToolbar,
             // Double-optional: `nil` keeps the existing color; `.some(nil)` clears it.
-            backgroundColor: backgroundColor ?? self.backgroundColor)
+            backgroundColor: backgroundColor ?? self.backgroundColor,
+            handleURLs: handleURLs ?? self.handleURLs,
+            openAnyURL: openAnyURL ?? self.openAnyURL)
     }
 }

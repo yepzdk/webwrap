@@ -56,6 +56,14 @@ struct Update: ParsableCommand {
           help: "Show or hide the navigation toolbar (back/forward/reload). If omitted, the current setting is kept.")
     var toolbar: Bool?
 
+    @Flag(name: .long, inversion: .prefixedNo,
+          help: "Register as an http/https handler and open URLs the app is launched with. If omitted, the current setting is kept.")
+    var handleUrls: Bool?
+
+    @Flag(name: .long, inversion: .prefixedNo,
+          help: "With --handle-urls, also accept off-domain URLs (default: only same-site). If omitted, the current setting is kept.")
+    var openAnyUrl: Bool?
+
     @Flag(name: .long, help: "Skip ad-hoc code signing.")
     var noSign: Bool = false
 
@@ -87,8 +95,13 @@ struct Update: ParsableCommand {
         if let url { try Create.validate(url: url) }
         if let name { try Create.validate(name: name) }
 
+        // --open-any-url implies URL handling, so turning it on also turns handling on
+        // (otherwise the setting would be inert). Only forces it when the user is
+        // enabling open-any-url, never overriding an explicit --no-handle-urls intent.
+        let effectiveHandleURLs = (openAnyUrl == true && handleUrls == nil) ? true : handleUrls
         let merged = existing.applying(url: url, name: name, width: width, height: height,
-                                       showToolbar: toolbar)
+                                       showToolbar: toolbar,
+                                       handleURLs: effectiveHandleURLs, openAnyURL: openAnyUrl)
         let outputDir = (appPath as NSString).deletingLastPathComponent
         let renamed = merged.name != existing.name
 
@@ -101,6 +114,12 @@ struct Update: ParsableCommand {
         }
         if merged.showToolbar != existing.showToolbar {
             changes.append("Toolbar → \(merged.showToolbar ? "shown" : "hidden")")
+        }
+        if merged.handleURLs != existing.handleURLs {
+            changes.append("Handle URLs → \(merged.handleURLs ? "on" : "off")")
+        }
+        if merged.openAnyURL != existing.openAnyURL {
+            changes.append("Open any URL → \(merged.openAnyURL ? "on" : "off")")
         }
         if icon != nil { changes.append("Icon → \(icon!)") }
         print("Updating \(existing.name) at \(appPath):")
@@ -149,7 +168,9 @@ struct Update: ParsableCommand {
             signIdentity: sign,
             notarize: notarize,
             notaryProfile: notaryProfile,
-            backgroundColor: merged.backgroundColor
+            backgroundColor: merged.backgroundColor,
+            handleURLs: merged.handleURLs,
+            openAnyURL: merged.openAnyURL
         )
         let newPath = try builder.build()
 
@@ -196,6 +217,12 @@ struct Create: ParsableCommand {
           help: "Show a navigation toolbar (back/forward/reload) in the window. Off by default.")
     var toolbar: Bool = false
 
+    @Flag(name: .long, help: "Register as an http/https handler and open URLs the app is launched with (e.g. from Choosy). Off by default.")
+    var handleUrls: Bool = false
+
+    @Flag(name: .long, help: "With --handle-urls, also accept off-domain URLs (default: only same-site).")
+    var openAnyUrl: Bool = false
+
     @Flag(name: .long, help: "Overwrite the destination .app if it already exists.")
     var force: Bool = false
 
@@ -211,8 +238,18 @@ struct Create: ParsableCommand {
     @Option(name: .long, help: "Name of a `notarytool store-credentials` keychain profile, used with --notarize.")
     var notaryProfile: String?
 
+    /// `--open-any-url` only means anything when URL handling is on, so it implies
+    /// `--handle-urls` — otherwise the flag would bake an inert setting. The effective
+    /// handle-urls value used everywhere in `create`.
+    private var effectiveHandleURLs: Bool { handleUrls || openAnyUrl }
+
     func run() throws {
         try Self.validateSigning(noSign: noSign, sign: sign, notarize: notarize, notaryProfile: notaryProfile)
+        // Note the implication so `--open-any-url` alone isn't silently inert.
+        if openAnyUrl && !handleUrls {
+            FileHandle.standardError.write(Data(
+                "Note: --open-any-url implies --handle-urls; enabling URL handling.\n".utf8))
+        }
 
         if let url, let name {
             // Both supplied — non-interactive path. Validate, then build directly.
@@ -296,6 +333,7 @@ struct Create: ParsableCommand {
           Bundle ID:   \(bundleIdentifier)
           Icon:        \(iconDescription)
           Toolbar:     \(toolbar ? "yes" : "no")
+          Handle URLs: \(effectiveHandleURLs ? (openAnyUrl ? "yes (any domain)" : "yes (same site)") : "no")
           Background:  \(bgDescription)
           Signing:     \(Self.signingDescription(noSign: noSign, sign: sign, notarize: notarize))
           Destination: \(destination)
@@ -339,7 +377,9 @@ struct Create: ParsableCommand {
             notarize: notarize,
             notaryProfile: notaryProfile,
             resolvedIcon: resolvedIcon,
-            backgroundColor: metadata.launchBackgroundColor
+            backgroundColor: metadata.launchBackgroundColor,
+            handleURLs: effectiveHandleURLs,
+            openAnyURL: openAnyUrl
         )
         let appPath = try builder.build()
         print("✓ Created \(appPath)")

@@ -19,11 +19,20 @@ final class AppConfigParseTests: XCTestCase {
             "WebWrapHeight": "700",
             "WebWrapToolbar": "1",
             "WebWrapBackgroundColor": "#1a73e8",
+            "WebWrapHandleURLs": "1",
+            "WebWrapOpenAnyURL": "1",
         ])
         XCTAssertEqual(AppConfig.parse(plistData: data),
                        AppConfig(url: "https://outlook.office.com", name: "Outlook",
                                  bundleId: "dk.yepz.webwrap.outlook", width: 1000, height: 700,
-                                 showToolbar: true, backgroundColor: "#1a73e8"))
+                                 showToolbar: true, backgroundColor: "#1a73e8",
+                                 handleURLs: true, openAnyURL: true))
+    }
+
+    func testURLHandlingDefaultsOffWhenAbsent() {
+        let cfg = AppConfig.parse(plistData: plist(["WebWrapURL": "https://x.test"]))
+        XCTAssertEqual(cfg?.handleURLs, false)
+        XCTAssertEqual(cfg?.openAnyURL, false)
     }
 
     func testBackgroundColorAbsentParsesNil() {
@@ -68,7 +77,8 @@ final class AppConfigParseTests: XCTestCase {
 final class AppConfigApplyTests: XCTestCase {
     private let base = AppConfig(url: "https://old.test", name: "Old",
                                  bundleId: "dk.yepz.webwrap.old", width: 1200, height: 800,
-                                 showToolbar: false, backgroundColor: "#123456")
+                                 showToolbar: false, backgroundColor: "#123456",
+                                 handleURLs: false, openAnyURL: false)
 
     func testNoOverridesCarriesEverything() {
         XCTAssertEqual(base.applying(), base)
@@ -111,5 +121,20 @@ final class AppConfigApplyTests: XCTestCase {
         XCTAssertEqual(base.applying(backgroundColor: "#abcdef").backgroundColor, "#abcdef")
         // .some(nil) clears it (double-optional inner nil).
         XCTAssertNil(base.applying(backgroundColor: .some(nil)).backgroundColor)
+    }
+
+    func testURLHandlingOverrideToggles() {
+        XCTAssertTrue(base.applying(handleURLs: true).handleURLs)
+        XCTAssertTrue(base.applying(openAnyURL: true).openAnyURL)
+        let on = base.applying(handleURLs: true, openAnyURL: true)
+        XCTAssertFalse(on.applying(handleURLs: false).handleURLs)
+        XCTAssertFalse(on.applying(openAnyURL: false).openAnyURL)
+    }
+
+    func testURLHandlingCarriedOverWhenNil() {
+        let on = base.applying(handleURLs: true, openAnyURL: true)
+        let after = on.applying(url: "https://new.test")
+        XCTAssertTrue(after.handleURLs)
+        XCTAssertTrue(after.openAnyURL)
     }
 }

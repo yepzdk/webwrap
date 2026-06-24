@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   show a clean branded fallback with a **Try Again** button instead of WebKit's generic
   error page. The message adapts to the failure, and the page picks up the manifest
   background color when set.
+- `--handle-urls` lets an app open URLs it's launched with (e.g. routed from Choosy),
+  registering as an http/https handler. Off by default; only same-site URLs are
+  accepted unless `--open-any-url` is set. Available on `create` and `update`.
 
 ### Changed
 - The View menu's **Back** and **Forward** items now disable when there's no history
