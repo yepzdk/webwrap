@@ -9,7 +9,7 @@ Wrap any website into a standalone macOS `.app` — a lightweight, native altern
 - **CLI mode** — when you run `webwrap create ...`, it generates an `.app` bundle.
 - **Host mode** — the same binary is copied into the generated bundle as its executable. When you launch the app, the bundle's `Info.plist` sets `WEBWRAP_HOST=1` (via `LSEnvironment`), so the binary boots a single WebKit window pointed at the baked-in URL instead of parsing CLI arguments.
 
-Each generated app uses WebKit (the system web engine — same as Safari), persists its own login/cookie session, and remembers its window size and position.
+Each generated app uses WebKit (the system web engine — same as Safari), persists its own login/cookie session, and remembers its window size and position. If a page can't load (you're offline, the host is unreachable, or it times out), the app shows a clean fallback with a **Try Again** button rather than a generic browser error.
 
 ## Sessions & login
 
