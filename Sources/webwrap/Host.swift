@@ -162,9 +162,27 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
 
     // MARK: - Toolbar
 
+    /// Static description of one toolbar button. Drives both the item factory and the
+    /// identifier lists, so adding a button is a single table entry.
+    private struct ToolbarButton {
+        let id: NSToolbarItem.Identifier
+        let symbol: String       // SF Symbol name (macOS 11+)
+        let fallbackTitle: String // text title on older systems lacking the symbol
+        let action: Selector
+    }
+
     private static let backItemID = NSToolbarItem.Identifier("WebWrapBack")
     private static let forwardItemID = NSToolbarItem.Identifier("WebWrapForward")
     private static let reloadItemID = NSToolbarItem.Identifier("WebWrapReload")
+
+    private static let toolbarButtons: [ToolbarButton] = [
+        ToolbarButton(id: backItemID, symbol: "chevron.backward",
+                      fallbackTitle: "Back", action: #selector(goBack(_:))),
+        ToolbarButton(id: forwardItemID, symbol: "chevron.forward",
+                      fallbackTitle: "Forward", action: #selector(goForward(_:))),
+        ToolbarButton(id: reloadItemID, symbol: "arrow.clockwise",
+                      fallbackTitle: "Reload", action: #selector(reloadPage(_:))),
+    ]
 
     /// Adds a navigation toolbar (back/forward/reload) to the window and wires the
     /// back/forward buttons to enable/disable as the web view's history changes.
@@ -177,16 +195,16 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
             window.toolbarStyle = .unified
         }
 
-        // Reflect navigability immediately and on every history change.
+        // Refresh once the items exist (setting `window.toolbar` may not have built them
+        // synchronously) so the initial enabled state matches a fresh, history-less view.
         updateNavEnablement()
-        navObservers = [
-            webView.observe(\.canGoBack, options: [.initial]) { [weak self] _, _ in
-                self?.updateNavEnablement()
-            },
-            webView.observe(\.canGoForward, options: [.initial]) { [weak self] _, _ in
-                self?.updateNavEnablement()
-            },
-        ]
+
+        // Track history changes. No `.initial` option: the items may not be built yet
+        // when this runs, so initial state is handled by the explicit call above and by
+        // the refresh in the item factory.
+        navObservers = [\WKWebView.canGoBack, \WKWebView.canGoForward].map { keyPath in
+            webView.observe(keyPath) { [weak self] _, _ in self?.updateNavEnablement() }
+        }
     }
 
     private func updateNavEnablement() {
@@ -196,24 +214,21 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
 
     /// Builds a borderless toolbar button backed by an SF Symbol, falling back to a
     /// text title on older systems that lack the symbol.
-    private func makeToolbarItem(id: NSToolbarItem.Identifier,
-                                 symbol: String,
-                                 fallbackTitle: String,
-                                 label: String,
-                                 action: Selector) -> NSToolbarItem {
-        let item = NSToolbarItem(itemIdentifier: id)
+    private func makeToolbarItem(_ spec: ToolbarButton) -> NSToolbarItem {
+        let label = spec.fallbackTitle // the title doubles as the accessibility label
+        let item = NSToolbarItem(itemIdentifier: spec.id)
         item.label = label
         item.toolTip = label
         let button = NSButton(frame: .zero)
         button.bezelStyle = .texturedRounded
         button.target = self
-        button.action = action
+        button.action = spec.action
         if #available(macOS 11.0, *),
-           let image = NSImage(systemSymbolName: symbol, accessibilityDescription: label) {
+           let image = NSImage(systemSymbolName: spec.symbol, accessibilityDescription: label) {
             button.image = image
             button.imagePosition = .imageOnly
         } else {
-            button.title = fallbackTitle
+            button.title = spec.fallbackTitle
         }
         item.view = button
         return item
@@ -222,26 +237,16 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     func toolbar(_ toolbar: NSToolbar,
                  itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
                  willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
-        switch itemIdentifier {
-        case Self.backItemID:
-            let item = makeToolbarItem(id: itemIdentifier, symbol: "chevron.backward",
-                                       fallbackTitle: "Back", label: "Back",
-                                       action: #selector(goBack(_:)))
-            backItem = item
-            return item
-        case Self.forwardItemID:
-            let item = makeToolbarItem(id: itemIdentifier, symbol: "chevron.forward",
-                                       fallbackTitle: "Forward", label: "Forward",
-                                       action: #selector(goForward(_:)))
-            forwardItem = item
-            return item
-        case Self.reloadItemID:
-            return makeToolbarItem(id: itemIdentifier, symbol: "arrow.clockwise",
-                                   fallbackTitle: "Reload", label: "Reload",
-                                   action: #selector(reloadPage(_:)))
-        default:
+        guard let spec = Self.toolbarButtons.first(where: { $0.id == itemIdentifier }) else {
             return nil
         }
+        let item = makeToolbarItem(spec)
+        // Capture weak refs to the history buttons so their enabled state can be updated,
+        // then reflect the current (history-less) state now that the item actually exists.
+        if itemIdentifier == Self.backItemID { backItem = item }
+        if itemIdentifier == Self.forwardItemID { forwardItem = item }
+        updateNavEnablement()
+        return item
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
