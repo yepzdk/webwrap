@@ -48,6 +48,26 @@ enum Prompt {
         return input
     }
 
+    /// Like `lineWithDefault`, but validates non-empty input: an empty response accepts
+    /// `defaultValue` verbatim, otherwise `validate` parses the input and re-prompts on a
+    /// rejection (showing its message). Returns nil only on EOF. `defaultDisplay` shows
+    /// what the default means in the prompt (e.g. "keep existing", "none").
+    static func askWithDefault<T>(_ message: String,
+                                  default defaultValue: T,
+                                  defaultDisplay: String,
+                                  validate: (String) -> Validation<T>) -> T? {
+        while true {
+            guard let input = line("\(message) [\(defaultDisplay)]: ") else { return nil }
+            if input.isEmpty { return defaultValue }
+            switch validate(input) {
+            case .valid(let value):
+                return value
+            case .invalid(let error):
+                print("  \(error)")
+            }
+        }
+    }
+
     /// Yes/no confirmation. Empty response accepts `defaultYes`.
     static func confirm(_ message: String, defaultYes: Bool = true) -> Bool {
         let hint = defaultYes ? "[Y/n]" : "[y/N]"

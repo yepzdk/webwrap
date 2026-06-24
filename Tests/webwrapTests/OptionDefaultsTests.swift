@@ -1,0 +1,117 @@
+import XCTest
+@testable import webwrap
+
+// Tests for the pure option-seed / mode-decision logic backing the interactive flows.
+// The stdin orchestration (promptForOptions) and Prompt.askWithDefault read real stdin
+// and are verified by hand, per the repo convention.
+
+final class OptionDefaultsForCreateTests: XCTestCase {
+    func testCoalescesFlagsAndTakesManifestBackground() {
+        let seed = OptionDefaults.forCreate(
+            width: 1200, height: 800, toolbar: false,
+            handleURLs: false, openAnyURL: false,
+            iconPath: nil, manifestBackground: "#1a73e8",
+            noSign: false, signIdentity: nil, notarize: false, notaryProfile: nil)
+        XCTAssertEqual(seed, OptionSeed(
+            width: 1200, height: 800, toolbar: false,
+            handleURLs: false, openAnyURL: false,
+            iconPath: nil, backgroundColor: "#1a73e8",
+            noSign: false, signIdentity: nil, notarize: false, notaryProfile: nil))
+    }
+
+    func testCarriesExplicitFlagValues() {
+        let seed = OptionDefaults.forCreate(
+            width: 1000, height: 700, toolbar: true,
+            handleURLs: true, openAnyURL: true,
+            iconPath: "/tmp/x.png", manifestBackground: nil,
+            noSign: true, signIdentity: "Developer ID Application: X", notarize: false, notaryProfile: nil)
+        XCTAssertEqual(seed.width, 1000)
+        XCTAssertEqual(seed.height, 700)
+        XCTAssertTrue(seed.toolbar)
+        XCTAssertTrue(seed.handleURLs)
+        XCTAssertTrue(seed.openAnyURL)
+        XCTAssertEqual(seed.iconPath, "/tmp/x.png")
+        XCTAssertNil(seed.backgroundColor)
+        XCTAssertTrue(seed.noSign)
+        XCTAssertEqual(seed.signIdentity, "Developer ID Application: X")
+    }
+}
+
+final class OptionDefaultsForUpdateTests: XCTestCase {
+    private let existing = AppConfig(
+        url: "https://github.com", name: "GitHub", bundleId: "dk.yepz.webwrap.github",
+        width: 1400, height: 900, showToolbar: true, backgroundColor: "#0d1117",
+        handleURLs: true, openAnyURL: false)
+
+    func testMapsPersistedConfigToSeed() {
+        let seed = OptionDefaults.forUpdate(existing: existing)
+        XCTAssertEqual(seed.width, 1400)
+        XCTAssertEqual(seed.height, 900)
+        XCTAssertTrue(seed.toolbar)
+        XCTAssertEqual(seed.backgroundColor, "#0d1117")
+        XCTAssertTrue(seed.handleURLs)
+        XCTAssertFalse(seed.openAnyURL)
+    }
+
+    func testIconAndSigningAreNotSeededFromConfig() {
+        // Neither is persisted, so the seed is "keep existing" icon (nil) and ad-hoc signing.
+        let seed = OptionDefaults.forUpdate(existing: existing)
+        XCTAssertNil(seed.iconPath)
+        XCTAssertFalse(seed.noSign)
+        XCTAssertNil(seed.signIdentity)
+        XCTAssertFalse(seed.notarize)
+        XCTAssertNil(seed.notaryProfile)
+    }
+}
+
+final class ResolveOpenAnyURLTests: XCTestCase {
+    func testOnlyWhenBothOn() {
+        XCTAssertTrue(OptionDefaults.resolveOpenAnyURL(handleURLs: true, openAnyURL: true))
+        XCTAssertFalse(OptionDefaults.resolveOpenAnyURL(handleURLs: true, openAnyURL: false))
+        // Off-domain is meaningless without handling, so it's forced off.
+        XCTAssertFalse(OptionDefaults.resolveOpenAnyURL(handleURLs: false, openAnyURL: true))
+        XCTAssertFalse(OptionDefaults.resolveOpenAnyURL(handleURLs: false, openAnyURL: false))
+    }
+}
+
+final class CreateModeTests: XCTestCase {
+    func testBothPresentIsNonInteractive() {
+        XCTAssertEqual(OptionDefaults.createMode(isInteractive: true, hasURL: true, hasName: true),
+                       .nonInteractive)
+        // Even off a TTY, both present builds directly.
+        XCTAssertEqual(OptionDefaults.createMode(isInteractive: false, hasURL: true, hasName: true),
+                       .nonInteractive)
+    }
+
+    func testMissingOnTTYPrompts() {
+        XCTAssertEqual(OptionDefaults.createMode(isInteractive: true, hasURL: false, hasName: true),
+                       .interactive)
+        XCTAssertEqual(OptionDefaults.createMode(isInteractive: true, hasURL: true, hasName: false),
+                       .interactive)
+    }
+
+    func testMissingOffTTYIsMissingInput() {
+        XCTAssertEqual(OptionDefaults.createMode(isInteractive: false, hasURL: false, hasName: false),
+                       .missingInput)
+    }
+}
+
+final class UpdateModeTests: XCTestCase {
+    func testBareOnTTYIsInteractive() {
+        XCTAssertEqual(OptionDefaults.updateMode(isInteractive: true, anyOptionFlag: false, force: false),
+                       .interactive)
+    }
+
+    func testAnyFlagOrForceIsNonInteractive() {
+        XCTAssertEqual(OptionDefaults.updateMode(isInteractive: true, anyOptionFlag: true, force: false),
+                       .nonInteractive)
+        XCTAssertEqual(OptionDefaults.updateMode(isInteractive: true, anyOptionFlag: false, force: true),
+                       .nonInteractive)
+    }
+
+    func testNonTTYBareIsNonInteractive() {
+        // Off a TTY with no flags: not interactive (the run() then requires --force).
+        XCTAssertEqual(OptionDefaults.updateMode(isInteractive: false, anyOptionFlag: false, force: false),
+                       .nonInteractive)
+    }
+}

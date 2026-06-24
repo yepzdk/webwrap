@@ -95,19 +95,67 @@ struct Update: ParsableCommand {
         if let url { try Create.validate(url: url) }
         if let name { try Create.validate(name: name) }
 
-        // --open-any-url implies URL handling, so turning it on also turns handling on
-        // (otherwise the setting would be inert). Only forces it when the user is
-        // enabling open-any-url, never overriding an explicit --no-handle-urls intent.
-        let effectiveHandleURLs = (openAnyUrl == true && handleUrls == nil) ? true : handleUrls
-        let merged = existing.applying(url: url, name: name, width: width, height: height,
+        // Decide flag-driven vs. interactive. A bare `update <app>` on a TTY edits all
+        // options interactively, seeded from the app's current settings; any option flag
+        // (or --force) keeps the existing flag-driven path.
+        let anyOptionFlag = url != nil || name != nil || icon != nil || width != nil
+            || height != nil || toolbar != nil || handleUrls != nil || openAnyUrl != nil
+            || sign != nil || noSign || notarize
+        let mode = OptionDefaults.updateMode(isInteractive: Prompt.isInteractive,
+                                             anyOptionFlag: anyOptionFlag, force: force)
+
+        // The resolved new config + the icon path / signing to build with. Filled by
+        // whichever path runs below.
+        let merged: AppConfig
+        var iconOverride = icon
+        var buildNoSign = noSign
+        var buildSign = sign
+        var buildNotarize = notarize
+        var buildNotaryProfile = notaryProfile
+
+        if mode == .interactive {
+            print("Updating \(existing.name) — current settings shown as defaults.\n")
+            // URL + name first (seeded from the current values).
+            let resolvedURL = Prompt.lineWithDefault("URL", default: existing.url)
+            try Create.validate(url: resolvedURL)
+            let resolvedName = Prompt.lineWithDefault("Name", default: existing.name)
+            try Create.validate(name: resolvedName)
+            print("")
+            guard let seed = promptForOptions(seed: OptionDefaults.forUpdate(existing: existing),
+                                              context: .update) else {
+                throw CleanExit.message("Aborted — no changes made.")
+            }
+            merged = existing.applying(
+                url: resolvedURL, name: resolvedName, width: seed.width, height: seed.height,
+                showToolbar: seed.toolbar,
+                backgroundColor: .some(seed.backgroundColor),
+                handleURLs: seed.handleURLs,
+                openAnyURL: OptionDefaults.resolveOpenAnyURL(handleURLs: seed.handleURLs,
+                                                             openAnyURL: seed.openAnyURL))
+            iconOverride = seed.iconPath
+            buildNoSign = seed.noSign
+            buildSign = seed.signIdentity
+            buildNotarize = seed.notarize
+            buildNotaryProfile = seed.notaryProfile
+        } else {
+            // --open-any-url implies URL handling, so turning it on also turns handling on
+            // (otherwise the setting would be inert). Only forces it when the user is
+            // enabling open-any-url, never overriding an explicit --no-handle-urls intent.
+            let effectiveHandleURLs = (openAnyUrl == true && handleUrls == nil) ? true : handleUrls
+            merged = existing.applying(url: url, name: name, width: width, height: height,
                                        showToolbar: toolbar,
                                        handleURLs: effectiveHandleURLs, openAnyURL: openAnyUrl)
+        }
+
+        try Create.validateSigning(noSign: buildNoSign, sign: buildSign,
+                                   notarize: buildNotarize, notaryProfile: buildNotaryProfile)
         let outputDir = (appPath as NSString).deletingLastPathComponent
         let renamed = merged.name != existing.name
 
-        // Summary of what will change.
+        // Summary of what will change. (Compares the merged config against the existing
+        // one, so it's accurate whether values came from flags or interactive prompts.)
         var changes: [String] = ["Refresh the embedded webwrap engine"]
-        if url != nil, merged.url != existing.url { changes.append("URL → \(merged.url)") }
+        if merged.url != existing.url { changes.append("URL → \(merged.url)") }
         if renamed { changes.append("Name → \(merged.name) (bundle renamed)") }
         if merged.width != existing.width || merged.height != existing.height {
             changes.append("Size → \(merged.width)×\(merged.height)")
@@ -121,7 +169,10 @@ struct Update: ParsableCommand {
         if merged.openAnyURL != existing.openAnyURL {
             changes.append("Open any URL → \(merged.openAnyURL ? "on" : "off")")
         }
-        if icon != nil { changes.append("Icon → \(icon!)") }
+        if merged.backgroundColor != existing.backgroundColor {
+            changes.append("Background → \(merged.backgroundColor ?? "default")")
+        }
+        if let iconOverride { changes.append("Icon → \(iconOverride)") }
         print("Updating \(existing.name) at \(appPath):")
         for c in changes { print("  • \(c)") }
 
@@ -137,9 +188,9 @@ struct Update: ParsableCommand {
         // When no new icon is given, preserve the existing one by copying the bundle's
         // AppIcon.icns to a temp file and feeding it back as the icon path (the build
         // removes and recreates the bundle, so we must capture it first).
-        var iconForBuild = icon
+        var iconForBuild = iconOverride
         var tmpIcon: String?
-        if icon == nil {
+        if iconOverride == nil {
             let icns = (appPath as NSString).appendingPathComponent("Contents/Resources/AppIcon.icns")
             if let data = fm.contents(atPath: icns) {
                 let tmp = (NSTemporaryDirectory() as NSString)
@@ -164,10 +215,10 @@ struct Update: ParsableCommand {
             height: merged.height,
             showToolbar: merged.showToolbar,
             force: true,
-            sign: !noSign,
-            signIdentity: sign,
-            notarize: notarize,
-            notaryProfile: notaryProfile,
+            sign: !buildNoSign,
+            signIdentity: buildSign,
+            notarize: buildNotarize,
+            notaryProfile: buildNotaryProfile,
             backgroundColor: merged.backgroundColor,
             handleURLs: merged.handleURLs,
             openAnyURL: merged.openAnyURL
@@ -251,29 +302,41 @@ struct Create: ParsableCommand {
                 "Note: --open-any-url implies --handle-urls; enabling URL handling.\n".utf8))
         }
 
-        if let url, let name {
+        switch OptionDefaults.createMode(isInteractive: Prompt.isInteractive,
+                                         hasURL: url != nil, hasName: name != nil) {
+        case .nonInteractive:
             // Both supplied — non-interactive path. Validate, then build directly.
-            try Self.validate(url: url)
-            try Self.validate(name: name)
+            try Self.validate(url: url!)
+            try Self.validate(name: name!)
             // Resolve icon + manifest metadata in one pass (skipped when an explicit
             // --icon is given). We still want the manifest's background color even when
             // the name came from a flag.
-            let site = resolveSite(url: url)
-            try build(url: url, name: name,
-                      resolvedIcon: site.icon, metadata: site.metadata)
-            return
-        }
+            let site = resolveSite(url: url!)
+            try build(url: url!, name: name!, seed: seedFromFlags(manifest: site.metadata),
+                      resolvedIcon: site.icon)
 
-        // At least one of url/name is missing.
-        guard Prompt.isInteractive else {
+        case .missingInput:
             // Non-TTY (piped/CI): never prompt — fail clearly, as before.
             let missing = [url == nil ? "--url" : nil, name == nil ? "--name" : nil]
                 .compactMap { $0 }.joined(separator: " and ")
             throw ValidationError("Missing required option(s): \(missing). "
                 + "Provide them as flags, or run interactively from a terminal.")
-        }
 
-        try runInteractive(presetURL: url, presetName: name)
+        case .interactive:
+            try runInteractive(presetURL: url, presetName: name)
+        }
+    }
+
+    /// The seed built from `create`'s flags (used for the non-interactive build and as the
+    /// starting point for the interactive prompts). Background defaults to the manifest's
+    /// color when no explicit value is known.
+    private func seedFromFlags(manifest: IconResolver.SiteMetadata) -> OptionSeed {
+        // `--open-any-url` implies `--handle-urls`, so the seed's handleURLs reflects that.
+        OptionDefaults.forCreate(
+            width: width, height: height, toolbar: toolbar,
+            handleURLs: effectiveHandleURLs, openAnyURL: openAnyUrl,
+            iconPath: icon, manifestBackground: manifest.launchBackgroundColor,
+            noSign: noSign, signIdentity: sign, notarize: notarize, notaryProfile: notaryProfile)
     }
 
     // MARK: - Interactive flow
@@ -295,14 +358,6 @@ struct Create: ParsableCommand {
         // name step can default from the manifest and the summary can report the icon.
         print("Resolving icon…")
         let site = resolveSite(url: resolvedURL)
-        let iconDescription: String
-        if icon != nil {
-            iconDescription = "from \(icon!)"
-        } else if let resolved = site.icon {
-            iconDescription = resolved.source.rawValue
-        } else {
-            iconDescription = "none found — default icon"
-        }
 
         // 3. Name. Prefer an explicit --name; otherwise suggest from the manifest
         // (short_name/name), then fall back to the host-label guess.
@@ -321,21 +376,31 @@ struct Create: ParsableCommand {
             }
         }
 
-        // 4. Summary + confirm.
+        // 4. Prompt for the remaining options, seeded from the flags (and the manifest
+        // background). An explicit --icon seeds the icon prompt; otherwise it auto-resolves.
+        print("")
+        guard let seed = promptForOptions(seed: seedFromFlags(manifest: site.metadata),
+                                          context: .create) else {
+            throw CleanExit.message("Aborted.")
+        }
+        // The summary reports the actual resolved icon source when none was entered.
+        let resolvedIcon = seed.iconPath == nil ? site.icon : nil
+
+        // 5. Summary + confirm.
         let bundleIdentifier = AppBuilder.defaultBundleId(name: resolvedName, override: bundleId)
         let destination = (output as NSString).appendingPathComponent("\(resolvedName).app")
-        let bgDescription = site.metadata.launchBackgroundColor.map { "\($0) (from manifest)" } ?? "default"
         print("""
 
         Summary
           Name:        \(resolvedName)
           URL:         \(resolvedURL)
           Bundle ID:   \(bundleIdentifier)
-          Icon:        \(iconDescription)
-          Toolbar:     \(toolbar ? "yes" : "no")
-          Handle URLs: \(effectiveHandleURLs ? (openAnyUrl ? "yes (any domain)" : "yes (same site)") : "no")
-          Background:  \(bgDescription)
-          Signing:     \(Self.signingDescription(noSign: noSign, sign: sign, notarize: notarize))
+          Icon:        \(iconSummary(seed: seed, resolvedIcon: resolvedIcon))
+          Size:        \(seed.width)×\(seed.height)
+          Toolbar:     \(seed.toolbar ? "yes" : "no")
+          Handle URLs: \(handleURLsSummary(seed: seed))
+          Background:  \(seed.backgroundColor ?? "default")
+          Signing:     \(Self.signingDescription(noSign: seed.noSign, sign: seed.signIdentity, notarize: seed.notarize))
           Destination: \(destination)
         """)
 
@@ -343,8 +408,20 @@ struct Create: ParsableCommand {
             throw CleanExit.message("Aborted — nothing was written.")
         }
 
-        try build(url: resolvedURL, name: resolvedName,
-                  resolvedIcon: site.icon, metadata: site.metadata)
+        try build(url: resolvedURL, name: resolvedName, seed: seed, resolvedIcon: resolvedIcon)
+    }
+
+    /// Human description of the icon choice for the summary.
+    private func iconSummary(seed: OptionSeed, resolvedIcon: IconResolver.Resolved?) -> String {
+        if let path = seed.iconPath { return "from \(path)" }
+        if let resolved = resolvedIcon { return resolved.source.rawValue }
+        return "none found — default icon"
+    }
+
+    /// Human description of the URL-handling choice for the summary.
+    private func handleURLsSummary(seed: OptionSeed) -> String {
+        guard seed.handleURLs else { return "no" }
+        return seed.openAnyURL ? "yes (any domain)" : "yes (same site)"
     }
 
     /// Resolves the site's icon and manifest metadata in a single network pass. When an
@@ -359,27 +436,27 @@ struct Create: ParsableCommand {
 
     // MARK: - Build
 
-    private func build(url: String, name: String,
-                       resolvedIcon: IconResolver.Resolved?,
-                       metadata: IconResolver.SiteMetadata) throws {
+    private func build(url: String, name: String, seed: OptionSeed,
+                       resolvedIcon: IconResolver.Resolved?) throws {
         let builder = AppBuilder(
             url: url,
             name: name,
             outputDir: output,
             bundleId: bundleId,
-            iconPath: icon,
-            width: width,
-            height: height,
-            showToolbar: toolbar,
+            iconPath: seed.iconPath,
+            width: seed.width,
+            height: seed.height,
+            showToolbar: seed.toolbar,
             force: force,
-            sign: !noSign,
-            signIdentity: sign,
-            notarize: notarize,
-            notaryProfile: notaryProfile,
+            sign: !seed.noSign,
+            signIdentity: seed.signIdentity,
+            notarize: seed.notarize,
+            notaryProfile: seed.notaryProfile,
             resolvedIcon: resolvedIcon,
-            backgroundColor: metadata.launchBackgroundColor,
-            handleURLs: effectiveHandleURLs,
-            openAnyURL: openAnyUrl
+            backgroundColor: seed.backgroundColor,
+            handleURLs: seed.handleURLs,
+            openAnyURL: OptionDefaults.resolveOpenAnyURL(handleURLs: seed.handleURLs,
+                                                         openAnyURL: seed.openAnyURL)
         )
         let appPath = try builder.build()
         print("✓ Created \(appPath)")

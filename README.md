@@ -50,7 +50,7 @@ From the same web app manifest, `webwrap` also picks up a couple of smart defaul
 
 ### Interactive mode
 
-Run `webwrap create` with no `--url`/`--name` and it prompts you:
+Run `webwrap create` with no `--url`/`--name` and it walks you through **every** option — window size, toolbar, URL handling, background color, icon, and signing — each pre-filled with a sensible default (or with any flag you did pass):
 
 ```sh
 $ webwrap create
@@ -58,15 +58,30 @@ URL: https://outlook.office.com
 Name [Outlook]:
 Resolving icon…
 
+Window width (points) [1200]:
+Window height (points) [800]:
+Show navigation toolbar (back/forward/reload)? [y/N]:
+Open URLs the app is launched with (register as an http/https handler)? [y/N]:
+Window background color (hex, blank for none) [from manifest]:
+Icon path (.png or .icns, blank to auto-resolve) [resolve from site]:
+Sign with a Developer ID identity (otherwise ad-hoc)? [y/N]:
+
 Summary
   Name:        Outlook
   URL:         https://outlook.office.com
   Bundle ID:   dk.yepz.webwrap.outlook
   Icon:        web app manifest
+  Size:        1200×800
+  Toolbar:     no
+  Handle URLs: no
+  Background:  default
+  Signing:     ad-hoc
   Destination: /Applications/Outlook.app
 
 Create this app? [Y/n]:
 ```
+
+Passing both `--url` and `--name` skips the prompts entirely and builds straight from the flags — handy for scripts. Piped/non-interactive input never prompts.
 
 It validates the URL (re-prompting if it's not absolute), suggests a name from the site's host, shows where the icon came from, and asks you to confirm before writing anything. Piped or non-interactive input never prompts — pass `--url` and `--name` as flags there.
 
@@ -131,12 +146,14 @@ It scans `/Applications` and `~/Applications`, identifying webwrap apps by a mar
 `webwrap update` refreshes an existing app in place — most usefully to give an app built by an older webwrap the latest engine (e.g. new menu/keyboard fixes), and optionally to change its settings. **The app's login session is preserved.**
 
 ```sh
-# Refresh the embedded engine, keep everything else
+# Edit every setting interactively, pre-filled with the app's current values
 webwrap update "/Applications/Outlook.app"
 
-# Change settings (anything omitted is kept)
+# Or change settings directly with flags (anything omitted is kept)
 webwrap update "/Applications/Outlook.app" --url https://outlook.office365.com --width 1400
 ```
+
+Run with just the app path on a terminal and `update` walks the same prompts as `create`, each defaulting to the app's current setting — so you can, say, turn the toolbar on without remembering the flag. Pass any option flag (or `--force`) to take the direct, non-interactive path instead.
 
 | Option | Description |
 | --- | --- |
