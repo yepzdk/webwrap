@@ -140,6 +140,13 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
         editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
         editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editMenu.addItem(.separator())
+        // Copy the current page's URL — useful because the chromeless window has no
+        // address bar. ⌘C is already Copy (selected content), so this uses ⌘⇧C.
+        let copyURL = editMenu.addItem(withTitle: "Copy Current URL",
+                                       action: #selector(copyCurrentURL(_:)), keyEquivalent: "c")
+        copyURL.keyEquivalentModifierMask = [.command, .shift]
+        copyURL.target = self
 
         // View menu: reload and back/forward for the wrapped site.
         let viewItem = NSMenuItem()
@@ -283,6 +290,23 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     @objc private func goBack(_ sender: Any?) { webView.goBack() }
     @objc private func goForward(_ sender: Any?) { webView.goForward() }
 
+    /// Copies the URL of the page currently shown to the system pasteboard. No-op (and
+    /// disabled in the menu) when nothing is loaded.
+    @objc private func copyCurrentURL(_ sender: Any?) {
+        guard let url = HostNavigation.urlToCopy(currentURL: webView.url) else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(url, forType: .string)
+    }
+
+    // Disable "Copy Current URL" when there's no loaded page to copy.
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(copyCurrentURL(_:)) {
+            return HostNavigation.urlToCopy(currentURL: webView?.url) != nil
+        }
+        return true
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
     }
@@ -323,5 +347,15 @@ enum HostAbout {
             lines.append("Created with webwrap")
         }
         return lines.joined(separator: "\n")
+    }
+}
+
+/// Pure navigation helpers, kept free of AppKit so they're unit-testable.
+enum HostNavigation {
+    /// The string to put on the pasteboard for "Copy Current URL", or nil if there's
+    /// nothing to copy (no page loaded). Drives both the copy action and whether the
+    /// menu item is enabled, so the two can't disagree.
+    static func urlToCopy(currentURL: URL?) -> String? {
+        currentURL?.absoluteString
     }
 }

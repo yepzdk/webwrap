@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `--toolbar` on `create` (off by default to keep the chromeless look); `update`
   accepts `--toolbar`/`--no-toolbar` to toggle it on an existing app. The back and
   forward buttons enable/disable with the page history.
+- **Copy Current URL** (Edit menu, ⌘⇧C) copies the current page's address — handy
+  since the window has no address bar. Disabled when no page is loaded.
 
 ## [0.3.0] - 2026-06-24
 
