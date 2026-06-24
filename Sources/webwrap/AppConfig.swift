@@ -9,6 +9,9 @@ struct AppConfig: Equatable {
     var bundleId: String
     var width: Int
     var height: Int
+    /// Whether the app shows a navigation toolbar (back/forward/reload). Off by default
+    /// to keep the chromeless look; opt in with `--toolbar`.
+    var showToolbar: Bool
 
     /// Parses an existing app's `Info.plist` bytes into an `AppConfig`, or nil if the
     /// bundle isn't a webwrap app (no `WebWrapURL` marker) or can't be parsed. Pure.
@@ -22,7 +25,10 @@ struct AppConfig: Equatable {
         // Dimensions are stored as strings; fall back to the defaults if missing/garbled.
         let width = Int((dict["WebWrapWidth"] as? String) ?? "") ?? 1200
         let height = Int((dict["WebWrapHeight"] as? String) ?? "") ?? 800
-        return AppConfig(url: url, name: name, bundleId: bundleId, width: width, height: height)
+        // Stored as "1"/"0"; absent (older apps) means no toolbar.
+        let showToolbar = (dict["WebWrapToolbar"] as? String) == "1"
+        return AppConfig(url: url, name: name, bundleId: bundleId,
+                         width: width, height: height, showToolbar: showToolbar)
     }
 
     /// Reads the `AppConfig` from a bundle on disk, or nil if it isn't a webwrap app.
@@ -37,12 +43,14 @@ struct AppConfig: Equatable {
     /// NOT overridable here — it must stay stable so the app's login/session data store
     /// (keyed to the bundle id) survives an update.
     func applying(url: String? = nil, name: String? = nil,
-                  width: Int? = nil, height: Int? = nil) -> AppConfig {
+                  width: Int? = nil, height: Int? = nil,
+                  showToolbar: Bool? = nil) -> AppConfig {
         AppConfig(
             url: url ?? self.url,
             name: name ?? self.name,
             bundleId: self.bundleId,
             width: width ?? self.width,
-            height: height ?? self.height)
+            height: height ?? self.height,
+            showToolbar: showToolbar ?? self.showToolbar)
     }
 }

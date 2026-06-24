@@ -31,11 +31,13 @@ final class InfoPlistTests: XCTestCase {
                        bundleId: String = "dk.yepz.webwrap.outlook",
                        width: Int = 1200,
                        height: Int = 800,
+                       showToolbar: Bool = false,
                        creatorVersion: String = "0.3.0") -> String {
         AppBuilder.makeInfoPlist(
             name: name, url: url, bundleId: bundleId,
             executable: "webwrap-host", iconFile: "AppIcon.icns",
-            width: width, height: height, creatorVersion: creatorVersion)
+            width: width, height: height, showToolbar: showToolbar,
+            creatorVersion: creatorVersion)
     }
 
     func testContainsExpectedKeysAndValues() {
@@ -49,6 +51,13 @@ final class InfoPlistTests: XCTestCase {
         XCTAssertTrue(xml.contains("<key>WEBWRAP_HOST</key>"))
         // Creator version is baked in for the generated app's About panel.
         XCTAssertTrue(xml.contains("<key>WebWrapCreatorVersion</key>\n    <string>0.3.0</string>"))
+        // Toolbar defaults off.
+        XCTAssertTrue(xml.contains("<key>WebWrapToolbar</key>\n    <string>0</string>"))
+    }
+
+    func testToolbarKeyReflectsFlag() {
+        XCTAssertTrue(plist(showToolbar: true).contains("<key>WebWrapToolbar</key>\n    <string>1</string>"))
+        XCTAssertTrue(plist(showToolbar: false).contains("<key>WebWrapToolbar</key>\n    <string>0</string>"))
     }
 
     func testEscapesNameAndURL() {

@@ -8,6 +8,8 @@ struct AppBuilder {
     let iconPath: String?
     let width: Int
     let height: Int
+    /// Whether the generated app shows a navigation toolbar (back/forward/reload).
+    let showToolbar: Bool
     let force: Bool
     /// Whether to sign at all. When false (`--no-sign`), the bundle is left unsigned.
     let sign: Bool
@@ -114,6 +116,7 @@ struct AppBuilder {
             iconFile: iconFile,
             width: width,
             height: height,
+            showToolbar: showToolbar,
             creatorVersion: WebWrap.configuration.version
         )
     }
@@ -128,6 +131,7 @@ struct AppBuilder {
                               iconFile: String,
                               width: Int,
                               height: Int,
+                              showToolbar: Bool,
                               creatorVersion: String) -> String {
         let escapedName = xmlEscape(name)
         let escapedURL = xmlEscape(url)
@@ -168,6 +172,8 @@ struct AppBuilder {
             <string>\(width)</string>
             <key>WebWrapHeight</key>
             <string>\(height)</string>
+            <key>WebWrapToolbar</key>
+            <string>\(showToolbar ? "1" : "0")</string>
             <key>WebWrapCreatorVersion</key>
             <string>\(escapedCreator)</string>
         </dict>

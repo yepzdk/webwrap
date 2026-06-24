@@ -7,9 +7,15 @@ import CryptoKit
 // and presents a single WKWebView window. Cookies/sessions are persisted to a
 // per-app data store so each wrapped app stays logged in independently.
 
-private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate {
+private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate, NSToolbarDelegate {
     var window: NSWindow!
     var webView: WKWebView!
+
+    /// KVO observations on the web view's navigation state, kept alive so the toolbar
+    /// back/forward buttons can enable/disable themselves. Empty when no toolbar.
+    private var navObservers: [NSKeyValueObservation] = []
+    private weak var backItem: NSToolbarItem?
+    private weak var forwardItem: NSToolbarItem?
 
     private func info(_ key: String) -> String? {
         Bundle.main.object(forInfoDictionaryKey: key) as? String
@@ -80,6 +86,12 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         // It also provides Quit and the About panel.
         NSApp.mainMenu = buildMainMenu(appName: title)
 
+        // Optional navigation toolbar (opt-in via WebWrapToolbar). Off keeps the
+        // chromeless look; on shows back/forward/reload in the window's title bar.
+        if info("WebWrapToolbar") == "1" {
+            installToolbar()
+        }
+
         if let url = URL(string: urlString) {
             webView.load(URLRequest(url: url))
         }
@@ -146,6 +158,98 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         NSApp.windowsMenu = windowMenu
 
         return mainMenu
+    }
+
+    // MARK: - Toolbar
+
+    private static let backItemID = NSToolbarItem.Identifier("WebWrapBack")
+    private static let forwardItemID = NSToolbarItem.Identifier("WebWrapForward")
+    private static let reloadItemID = NSToolbarItem.Identifier("WebWrapReload")
+
+    /// Adds a navigation toolbar (back/forward/reload) to the window and wires the
+    /// back/forward buttons to enable/disable as the web view's history changes.
+    private func installToolbar() {
+        let toolbar = NSToolbar(identifier: "WebWrapNavigationToolbar")
+        toolbar.delegate = self
+        toolbar.displayMode = .iconOnly
+        window.toolbar = toolbar
+        if #available(macOS 11.0, *) {
+            window.toolbarStyle = .unified
+        }
+
+        // Reflect navigability immediately and on every history change.
+        updateNavEnablement()
+        navObservers = [
+            webView.observe(\.canGoBack, options: [.initial]) { [weak self] _, _ in
+                self?.updateNavEnablement()
+            },
+            webView.observe(\.canGoForward, options: [.initial]) { [weak self] _, _ in
+                self?.updateNavEnablement()
+            },
+        ]
+    }
+
+    private func updateNavEnablement() {
+        backItem?.isEnabled = webView.canGoBack
+        forwardItem?.isEnabled = webView.canGoForward
+    }
+
+    /// Builds a borderless toolbar button backed by an SF Symbol, falling back to a
+    /// text title on older systems that lack the symbol.
+    private func makeToolbarItem(id: NSToolbarItem.Identifier,
+                                 symbol: String,
+                                 fallbackTitle: String,
+                                 label: String,
+                                 action: Selector) -> NSToolbarItem {
+        let item = NSToolbarItem(itemIdentifier: id)
+        item.label = label
+        item.toolTip = label
+        let button = NSButton(frame: .zero)
+        button.bezelStyle = .texturedRounded
+        button.target = self
+        button.action = action
+        if #available(macOS 11.0, *),
+           let image = NSImage(systemSymbolName: symbol, accessibilityDescription: label) {
+            button.image = image
+            button.imagePosition = .imageOnly
+        } else {
+            button.title = fallbackTitle
+        }
+        item.view = button
+        return item
+    }
+
+    func toolbar(_ toolbar: NSToolbar,
+                 itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
+                 willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
+        switch itemIdentifier {
+        case Self.backItemID:
+            let item = makeToolbarItem(id: itemIdentifier, symbol: "chevron.backward",
+                                       fallbackTitle: "Back", label: "Back",
+                                       action: #selector(goBack(_:)))
+            backItem = item
+            return item
+        case Self.forwardItemID:
+            let item = makeToolbarItem(id: itemIdentifier, symbol: "chevron.forward",
+                                       fallbackTitle: "Forward", label: "Forward",
+                                       action: #selector(goForward(_:)))
+            forwardItem = item
+            return item
+        case Self.reloadItemID:
+            return makeToolbarItem(id: itemIdentifier, symbol: "arrow.clockwise",
+                                   fallbackTitle: "Reload", label: "Reload",
+                                   action: #selector(reloadPage(_:)))
+        default:
+            return nil
+        }
+    }
+
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [Self.backItemID, Self.forwardItemID, .space, Self.reloadItemID]
+    }
+
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [Self.backItemID, Self.forwardItemID, Self.reloadItemID, .space, .flexibleSpace]
     }
 
     @objc private func showAbout(_ sender: Any?) {

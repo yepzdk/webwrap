@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- Optional navigation toolbar with back/forward/reload buttons. Opt in with
+  `--toolbar` on `create` (off by default to keep the chromeless look); `update`
+  accepts `--toolbar`/`--no-toolbar` to toggle it on an existing app. The back and
+  forward buttons enable/disable with the page history.
+
 ## [0.3.0] - 2026-06-24
 
 ### Added
