@@ -82,6 +82,8 @@ It validates the URL (re-prompting if it's not absolute), suggests a name from t
 | `--width` | Initial window width (points) | `1200` |
 | `--height` | Initial window height (points) | `800` |
 | `--toolbar` | Show a navigation toolbar (back/forward/reload) | off |
+| `--handle-urls` | Register as an http/https handler and open URLs the app is launched with (e.g. from Choosy) | off |
+| `--open-any-url` | With `--handle-urls`, also accept off-domain URLs (default: only same-site) | off |
 | `--force` | Overwrite an existing `.app` | off |
 | `--no-sign` | Skip ad-hoc code signing | off |
 | `--sign` | Sign with a Developer ID identity (enables the hardened runtime) | ad-hoc |
@@ -98,6 +100,16 @@ webwrap create -u https://app.example.com -n "Example" \
 # Write somewhere other than /Applications
 webwrap create -u https://chat.openai.com -n "ChatGPT" -o ~/Applications --force
 ```
+
+### Opening the app with a URL
+
+With `--handle-urls`, a generated app registers as an `http`/`https` handler and navigates to URLs it's launched with — so you can route links to it from [Choosy](https://www.choosy.app/), `open -a "GitHub" https://github.com/...`, or anything that opens URLs in a chosen app:
+
+```sh
+webwrap create -u https://github.com -n "GitHub" --handle-urls
+```
+
+It's **off by default** so apps don't claim `http`/`https` system-wide unless you opt in. By default only **same-site** URLs are accepted (a GitHub app loads `github.com` links and ignores `example.com`); pass `--open-any-url` to let the app navigate to any URL it's handed. Rejected off-domain URLs are simply ignored — the app stays on its current page.
 
 ## Listing your apps
 
@@ -133,6 +145,8 @@ webwrap update "/Applications/Outlook.app" --url https://outlook.office365.com -
 | `--icon` | New `.png`/`.icns` icon (existing icon kept if omitted) |
 | `--width`, `--height` | New window size |
 | `--toolbar` / `--no-toolbar` | Show or hide the navigation toolbar (current setting kept if omitted) |
+| `--handle-urls` / `--no-handle-urls` | Turn URL handling on or off (current setting kept if omitted) |
+| `--open-any-url` / `--no-open-any-url` | Allow or restrict off-domain URLs (current setting kept if omitted) |
 | `--sign`, `--notarize`, `--notary-profile`, `--no-sign` | Signing, same as `create` |
 | `--force` | Skip the confirmation prompt |
 

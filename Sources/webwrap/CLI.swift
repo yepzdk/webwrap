@@ -56,6 +56,14 @@ struct Update: ParsableCommand {
           help: "Show or hide the navigation toolbar (back/forward/reload). If omitted, the current setting is kept.")
     var toolbar: Bool?
 
+    @Flag(name: .long, inversion: .prefixedNo,
+          help: "Register as an http/https handler and open URLs the app is launched with. If omitted, the current setting is kept.")
+    var handleUrls: Bool?
+
+    @Flag(name: .long, inversion: .prefixedNo,
+          help: "With --handle-urls, also accept off-domain URLs (default: only same-site). If omitted, the current setting is kept.")
+    var openAnyUrl: Bool?
+
     @Flag(name: .long, help: "Skip ad-hoc code signing.")
     var noSign: Bool = false
 
@@ -88,7 +96,8 @@ struct Update: ParsableCommand {
         if let name { try Create.validate(name: name) }
 
         let merged = existing.applying(url: url, name: name, width: width, height: height,
-                                       showToolbar: toolbar)
+                                       showToolbar: toolbar,
+                                       handleURLs: handleUrls, openAnyURL: openAnyUrl)
         let outputDir = (appPath as NSString).deletingLastPathComponent
         let renamed = merged.name != existing.name
 
@@ -101,6 +110,12 @@ struct Update: ParsableCommand {
         }
         if merged.showToolbar != existing.showToolbar {
             changes.append("Toolbar → \(merged.showToolbar ? "shown" : "hidden")")
+        }
+        if merged.handleURLs != existing.handleURLs {
+            changes.append("Handle URLs → \(merged.handleURLs ? "on" : "off")")
+        }
+        if merged.openAnyURL != existing.openAnyURL {
+            changes.append("Open any URL → \(merged.openAnyURL ? "on" : "off")")
         }
         if icon != nil { changes.append("Icon → \(icon!)") }
         print("Updating \(existing.name) at \(appPath):")
@@ -149,7 +164,9 @@ struct Update: ParsableCommand {
             signIdentity: sign,
             notarize: notarize,
             notaryProfile: notaryProfile,
-            backgroundColor: merged.backgroundColor
+            backgroundColor: merged.backgroundColor,
+            handleURLs: merged.handleURLs,
+            openAnyURL: merged.openAnyURL
         )
         let newPath = try builder.build()
 
@@ -195,6 +212,12 @@ struct Create: ParsableCommand {
     @Flag(name: .long, inversion: .prefixedNo,
           help: "Show a navigation toolbar (back/forward/reload) in the window. Off by default.")
     var toolbar: Bool = false
+
+    @Flag(name: .long, help: "Register as an http/https handler and open URLs the app is launched with (e.g. from Choosy). Off by default.")
+    var handleUrls: Bool = false
+
+    @Flag(name: .long, help: "With --handle-urls, also accept off-domain URLs (default: only same-site).")
+    var openAnyUrl: Bool = false
 
     @Flag(name: .long, help: "Overwrite the destination .app if it already exists.")
     var force: Bool = false
@@ -296,6 +319,7 @@ struct Create: ParsableCommand {
           Bundle ID:   \(bundleIdentifier)
           Icon:        \(iconDescription)
           Toolbar:     \(toolbar ? "yes" : "no")
+          Handle URLs: \(handleUrls ? (openAnyUrl ? "yes (any domain)" : "yes (same site)") : "no")
           Background:  \(bgDescription)
           Signing:     \(Self.signingDescription(noSign: noSign, sign: sign, notarize: notarize))
           Destination: \(destination)
@@ -339,7 +363,9 @@ struct Create: ParsableCommand {
             notarize: notarize,
             notaryProfile: notaryProfile,
             resolvedIcon: resolvedIcon,
-            backgroundColor: metadata.launchBackgroundColor
+            backgroundColor: metadata.launchBackgroundColor,
+            handleURLs: handleUrls,
+            openAnyURL: openAnyUrl
         )
         let appPath = try builder.build()
         print("✓ Created \(appPath)")

@@ -33,12 +33,15 @@ final class InfoPlistTests: XCTestCase {
                        height: Int = 800,
                        showToolbar: Bool = false,
                        backgroundColor: String? = nil,
+                       handleURLs: Bool = false,
+                       openAnyURL: Bool = false,
                        creatorVersion: String = "0.3.0") -> String {
         AppBuilder.makeInfoPlist(
             name: name, url: url, bundleId: bundleId,
             executable: "webwrap-host", iconFile: "AppIcon.icns",
             width: width, height: height, showToolbar: showToolbar,
-            backgroundColor: backgroundColor, creatorVersion: creatorVersion)
+            backgroundColor: backgroundColor, handleURLs: handleURLs,
+            openAnyURL: openAnyURL, creatorVersion: creatorVersion)
     }
 
     func testContainsExpectedKeysAndValues() {
@@ -59,6 +62,38 @@ final class InfoPlistTests: XCTestCase {
     func testToolbarKeyReflectsFlag() {
         XCTAssertTrue(plist(showToolbar: true).contains("<key>WebWrapToolbar</key>\n    <string>1</string>"))
         XCTAssertTrue(plist(showToolbar: false).contains("<key>WebWrapToolbar</key>\n    <string>0</string>"))
+    }
+
+    func testURLHandlingKeysReflectFlags() {
+        let on = plist(handleURLs: true, openAnyURL: true)
+        XCTAssertTrue(on.contains("<key>WebWrapHandleURLs</key>\n    <string>1</string>"))
+        XCTAssertTrue(on.contains("<key>WebWrapOpenAnyURL</key>\n    <string>1</string>"))
+        let off = plist(handleURLs: false, openAnyURL: false)
+        XCTAssertTrue(off.contains("<key>WebWrapHandleURLs</key>\n    <string>0</string>"))
+        XCTAssertTrue(off.contains("<key>WebWrapOpenAnyURL</key>\n    <string>0</string>"))
+    }
+
+    func testCFBundleURLTypesOnlyWhenHandlingURLs() {
+        XCTAssertFalse(plist(handleURLs: false).contains("CFBundleURLTypes"))
+        let on = plist(handleURLs: true)
+        XCTAssertTrue(on.contains("<key>CFBundleURLTypes</key>"))
+        XCTAssertTrue(on.contains("<string>http</string>"))
+        XCTAssertTrue(on.contains("<string>https</string>"))
+        XCTAssertTrue(on.contains("<key>CFBundleTypeRole</key>"))
+    }
+
+    func testRemainsValidPlistWithURLTypes() throws {
+        // Guard the conditional CFBundleURLTypes block against whitespace breakage.
+        let xml = plist(backgroundColor: "#1a73e8", handleURLs: true, openAnyURL: true)
+        let obj = try PropertyListSerialization.propertyList(from: Data(xml.utf8), format: nil)
+        let dict = try XCTUnwrap(obj as? [String: Any])
+        XCTAssertEqual(dict["WebWrapHandleURLs"] as? String, "1")
+        XCTAssertEqual(dict["WebWrapOpenAnyURL"] as? String, "1")
+        let types = try XCTUnwrap(dict["CFBundleURLTypes"] as? [[String: Any]])
+        let first: [String: Any] = try XCTUnwrap(types.first)
+        let schemesAny: Any = try XCTUnwrap(first["CFBundleURLSchemes"])
+        let schemes = try XCTUnwrap(schemesAny as? [String])
+        XCTAssertEqual(schemes, ["http", "https"])
     }
 
     func testBackgroundColorKeyOmittedWhenNil() {

@@ -16,6 +16,12 @@ struct AppConfig: Equatable {
     /// white first-paint flash. Nil when unset. Derived from the site's manifest at
     /// create time; carried over on update.
     var backgroundColor: String?
+    /// Whether the app registers as an http/https handler and navigates to URLs it's
+    /// opened with (e.g. from Choosy). Off by default; `--handle-urls`.
+    var handleURLs: Bool
+    /// When `handleURLs` is on, whether off-domain incoming URLs are accepted too.
+    /// `--open-any-url`.
+    var openAnyURL: Bool
 
     /// Parses an existing app's `Info.plist` bytes into an `AppConfig`, or nil if the
     /// bundle isn't a webwrap app (no `WebWrapURL` marker) or can't be parsed. Pure.
@@ -34,9 +40,13 @@ struct AppConfig: Equatable {
         // Optional; absent on older apps and sites without a manifest color.
         let backgroundColor = (dict["WebWrapBackgroundColor"] as? String)
             .flatMap { $0.isEmpty ? nil : $0 }
+        // Stored as "1"/"0"; absent (older apps) means off.
+        let handleURLs = (dict["WebWrapHandleURLs"] as? String) == "1"
+        let openAnyURL = (dict["WebWrapOpenAnyURL"] as? String) == "1"
         return AppConfig(url: url, name: name, bundleId: bundleId,
                          width: width, height: height, showToolbar: showToolbar,
-                         backgroundColor: backgroundColor)
+                         backgroundColor: backgroundColor,
+                         handleURLs: handleURLs, openAnyURL: openAnyURL)
     }
 
     /// Reads the `AppConfig` from a bundle on disk, or nil if it isn't a webwrap app.
@@ -53,7 +63,9 @@ struct AppConfig: Equatable {
     func applying(url: String? = nil, name: String? = nil,
                   width: Int? = nil, height: Int? = nil,
                   showToolbar: Bool? = nil,
-                  backgroundColor: String?? = nil) -> AppConfig {
+                  backgroundColor: String?? = nil,
+                  handleURLs: Bool? = nil,
+                  openAnyURL: Bool? = nil) -> AppConfig {
         AppConfig(
             url: url ?? self.url,
             name: name ?? self.name,
@@ -62,6 +74,8 @@ struct AppConfig: Equatable {
             height: height ?? self.height,
             showToolbar: showToolbar ?? self.showToolbar,
             // Double-optional: `nil` keeps the existing color; `.some(nil)` clears it.
-            backgroundColor: backgroundColor ?? self.backgroundColor)
+            backgroundColor: backgroundColor ?? self.backgroundColor,
+            handleURLs: handleURLs ?? self.handleURLs,
+            openAnyURL: openAnyURL ?? self.openAnyURL)
     }
 }
