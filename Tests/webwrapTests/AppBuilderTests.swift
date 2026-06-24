@@ -31,7 +31,7 @@ final class InfoPlistTests: XCTestCase {
                        bundleId: String = "dk.yepz.webwrap.outlook",
                        width: Int = 1200,
                        height: Int = 800,
-                       creatorVersion: String = "0.2.0") -> String {
+                       creatorVersion: String = "0.3.0") -> String {
         AppBuilder.makeInfoPlist(
             name: name, url: url, bundleId: bundleId,
             executable: "webwrap-host", iconFile: "AppIcon.icns",
@@ -48,7 +48,7 @@ final class InfoPlistTests: XCTestCase {
         // Host-mode marker must be present so the launched bundle runs as the web host.
         XCTAssertTrue(xml.contains("<key>WEBWRAP_HOST</key>"))
         // Creator version is baked in for the generated app's About panel.
-        XCTAssertTrue(xml.contains("<key>WebWrapCreatorVersion</key>\n    <string>0.2.0</string>"))
+        XCTAssertTrue(xml.contains("<key>WebWrapCreatorVersion</key>\n    <string>0.3.0</string>"))
     }
 
     func testEscapesNameAndURL() {
