@@ -35,18 +35,24 @@ struct AppConfig: Equatable {
         // Dimensions are stored as strings; fall back to the defaults if missing/garbled.
         let width = Int((dict["WebWrapWidth"] as? String) ?? "") ?? 1200
         let height = Int((dict["WebWrapHeight"] as? String) ?? "") ?? 800
-        // Stored as "1"/"0"; absent (older apps) means no toolbar.
-        let showToolbar = (dict["WebWrapToolbar"] as? String) == "1"
+        // Bool keys are stored as "1"/"0"; absent (older apps) means off.
+        let showToolbar = plistBool(dict["WebWrapToolbar"])
         // Optional; absent on older apps and sites without a manifest color.
         let backgroundColor = (dict["WebWrapBackgroundColor"] as? String)
             .flatMap { $0.isEmpty ? nil : $0 }
-        // Stored as "1"/"0"; absent (older apps) means off.
-        let handleURLs = (dict["WebWrapHandleURLs"] as? String) == "1"
-        let openAnyURL = (dict["WebWrapOpenAnyURL"] as? String) == "1"
+        let handleURLs = plistBool(dict["WebWrapHandleURLs"])
+        let openAnyURL = plistBool(dict["WebWrapOpenAnyURL"])
         return AppConfig(url: url, name: name, bundleId: bundleId,
                          width: width, height: height, showToolbar: showToolbar,
                          backgroundColor: backgroundColor,
                          handleURLs: handleURLs, openAnyURL: openAnyURL)
+    }
+
+    /// Reads a `WebWrap*` boolean plist value, stored as the string "1"/"0". Absent or
+    /// any non-"1" value reads as false. Centralizes the convention shared by all the
+    /// bool keys (toolbar, handle-urls, open-any-url).
+    static func plistBool(_ value: Any?) -> Bool {
+        (value as? String) == "1"
     }
 
     /// Reads the `AppConfig` from a bundle on disk, or nil if it isn't a webwrap app.

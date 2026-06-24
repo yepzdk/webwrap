@@ -95,9 +95,13 @@ struct Update: ParsableCommand {
         if let url { try Create.validate(url: url) }
         if let name { try Create.validate(name: name) }
 
+        // --open-any-url implies URL handling, so turning it on also turns handling on
+        // (otherwise the setting would be inert). Only forces it when the user is
+        // enabling open-any-url, never overriding an explicit --no-handle-urls intent.
+        let effectiveHandleURLs = (openAnyUrl == true && handleUrls == nil) ? true : handleUrls
         let merged = existing.applying(url: url, name: name, width: width, height: height,
                                        showToolbar: toolbar,
-                                       handleURLs: handleUrls, openAnyURL: openAnyUrl)
+                                       handleURLs: effectiveHandleURLs, openAnyURL: openAnyUrl)
         let outputDir = (appPath as NSString).deletingLastPathComponent
         let renamed = merged.name != existing.name
 
@@ -234,8 +238,18 @@ struct Create: ParsableCommand {
     @Option(name: .long, help: "Name of a `notarytool store-credentials` keychain profile, used with --notarize.")
     var notaryProfile: String?
 
+    /// `--open-any-url` only means anything when URL handling is on, so it implies
+    /// `--handle-urls` — otherwise the flag would bake an inert setting. The effective
+    /// handle-urls value used everywhere in `create`.
+    private var effectiveHandleURLs: Bool { handleUrls || openAnyUrl }
+
     func run() throws {
         try Self.validateSigning(noSign: noSign, sign: sign, notarize: notarize, notaryProfile: notaryProfile)
+        // Note the implication so `--open-any-url` alone isn't silently inert.
+        if openAnyUrl && !handleUrls {
+            FileHandle.standardError.write(Data(
+                "Note: --open-any-url implies --handle-urls; enabling URL handling.\n".utf8))
+        }
 
         if let url, let name {
             // Both supplied — non-interactive path. Validate, then build directly.
@@ -319,7 +333,7 @@ struct Create: ParsableCommand {
           Bundle ID:   \(bundleIdentifier)
           Icon:        \(iconDescription)
           Toolbar:     \(toolbar ? "yes" : "no")
-          Handle URLs: \(handleUrls ? (openAnyUrl ? "yes (any domain)" : "yes (same site)") : "no")
+          Handle URLs: \(effectiveHandleURLs ? (openAnyUrl ? "yes (any domain)" : "yes (same site)") : "no")
           Background:  \(bgDescription)
           Signing:     \(Self.signingDescription(noSign: noSign, sign: sign, notarize: notarize))
           Destination: \(destination)
@@ -364,7 +378,7 @@ struct Create: ParsableCommand {
             notaryProfile: notaryProfile,
             resolvedIcon: resolvedIcon,
             backgroundColor: metadata.launchBackgroundColor,
-            handleURLs: handleUrls,
+            handleURLs: effectiveHandleURLs,
             openAnyURL: openAnyUrl
         )
         let appPath = try builder.build()
