@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   with the manifest's `background_color` (falling back to `theme_color`) to avoid a
   white first-paint flash. Both are still overridable, and the manifest fetch is
   shared with icon resolution (no extra request).
+- When a page fails to load (offline, host unreachable, timeout), generated apps now
+  show a clean branded fallback with a **Try Again** button instead of WebKit's generic
+  error page. The message adapts to the failure, and the page picks up the manifest
+  background color when set.
 
 ### Changed
 - The View menu's **Back** and **Forward** items now disable when there's no history

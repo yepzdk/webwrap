@@ -7,7 +7,7 @@ import CryptoKit
 // and presents a single WKWebView window. Cookies/sessions are persisted to a
 // per-app data store so each wrapped app stays logged in independently.
 
-private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate, NSToolbarDelegate {
+private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate, NSToolbarDelegate, WKScriptMessageHandler {
     var window: NSWindow!
     var webView: WKWebView!
 
@@ -19,6 +19,13 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     // so enable/disable must target the NSButton directly.
     private weak var backButton: NSButton?
     private weak var forwardButton: NSButton?
+
+    /// The site URL the app is meant to show, kept so the offline fallback's Retry can
+    /// reload it (the web view's own `url` is the about:blank/data page while the error
+    /// screen is up).
+    private var intendedURL: URL?
+    /// Raw manifest background color (if any), reused to tint the offline page.
+    private var backgroundColorRaw: String?
 
     private func info(_ key: String) -> String? {
         Bundle.main.object(forInfoDictionaryKey: key) as? String
@@ -64,9 +71,13 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         let width = Double(info("WebWrapWidth") ?? "1200") ?? 1200
         let height = Double(info("WebWrapHeight") ?? "800") ?? 800
 
+        backgroundColorRaw = info("WebWrapBackgroundColor")
+
         let config = WKWebViewConfiguration()
         config.websiteDataStore = Self.makeDataStore()
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
+        // The offline fallback page's Retry button posts here to reload the intended URL.
+        config.userContentController.add(self, name: "webwrapRetry")
 
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: width, height: height),
@@ -90,7 +101,7 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         // `underPageBackgroundColor` is the public API for this (macOS 12+, so always
         // available at our 13 deployment target) — avoid the `drawsBackground` KVC
         // trick, which reaches a private ivar and raises on current WebKit SDKs.
-        if let raw = info("WebWrapBackgroundColor"), let rgba = CSSColor.parse(raw) {
+        if let raw = backgroundColorRaw, let rgba = CSSColor.parse(raw) {
             let color = NSColor(red: rgba.red, green: rgba.green,
                                 blue: rgba.blue, alpha: rgba.alpha)
             window.backgroundColor = color
@@ -109,6 +120,7 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         }
 
         if let url = URL(string: urlString) {
+            intendedURL = url
             webView.load(URLRequest(url: url))
         }
 
@@ -343,6 +355,43 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         }
         return nil
     }
+
+    // MARK: - Load failures (offline fallback)
+
+    // A failure before the page started loading (DNS, no connection, timeout) — the
+    // common offline case.
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!,
+                 withError error: Error) {
+        showFallbackIfNeeded(for: error)
+    }
+
+    // A failure after the page committed (less common for connectivity, but covers
+    // mid-load drops).
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        showFallbackIfNeeded(for: error)
+    }
+
+    /// Replaces the view with the branded offline page for genuine top-level load
+    /// failures, ignoring cancellations/policy interruptions that aren't real errors.
+    private func showFallbackIfNeeded(for error: Error) {
+        let code = (error as NSError).code
+        guard !OfflineFallback.isIgnorable(errorCode: code) else { return }
+
+        let appName = info("CFBundleName") ?? "WebWrap"
+        let host = intendedURL?.host
+        let kind = OfflineFallback.classify(errorCode: code)
+        let html = OfflineFallback.html(appName: appName, host: host, kind: kind,
+                                        backgroundColor: backgroundColorRaw)
+        // baseURL nil: the page is fully self-contained (inline CSS, no external refs).
+        webView.loadHTMLString(html, baseURL: nil)
+    }
+
+    // Retry button on the fallback page posts here; reload the intended site URL.
+    func userContentController(_ userContentController: WKUserContentController,
+                               didReceive message: WKScriptMessage) {
+        guard message.name == "webwrapRetry", let url = intendedURL else { return }
+        webView.load(URLRequest(url: url))
+    }
 }
 
 func runHost() {
@@ -419,5 +468,159 @@ enum CSSColor {
             green: channel(2),
             blue: channel(4),
             alpha: full.count == 8 ? channel(6) : 1.0)
+    }
+}
+
+/// Builds the local fallback page shown when a top-level navigation fails (offline,
+/// host unreachable, timeout). Pure (no AppKit/WebKit) so the error classification and
+/// HTML generation are unit-testable. The host loads `html(...)` via `loadHTMLString`
+/// and wires the Retry button (which posts to the `webwrapRetry` message handler) back
+/// to a reload of the intended URL.
+enum OfflineFallback {
+    /// The kind of failure, which selects the headline/message. Anything we don't
+    /// specifically recognize falls to `.generic`.
+    enum Kind: Equatable {
+        case offline       // no network connection at all
+        case cannotReach   // DNS / host lookup failed
+        case timedOut      // connection timed out
+        case generic       // other load failure
+
+        var headline: String {
+            switch self {
+            case .offline: return "You're offline"
+            case .cannotReach: return "Can't reach the site"
+            case .timedOut: return "The connection timed out"
+            case .generic: return "This page didn't load"
+            }
+        }
+
+        /// The body line. `host` (when known) is woven in for the reachability cases.
+        func message(host: String?) -> String {
+            let site = host.map { "“\($0)”" } ?? "the site"
+            switch self {
+            case .offline:
+                return "Check your internet connection, then try again."
+            case .cannotReach:
+                return "We couldn't connect to \(site). It may be down, or your connection may be offline."
+            case .timedOut:
+                return "\(site) took too long to respond. Check your connection and try again."
+            case .generic:
+                return "Something went wrong loading \(site). Try again in a moment."
+            }
+        }
+    }
+
+    /// Maps a URL-loading error code to a `Kind`. Mirrors `NSURLError*` raw values so
+    /// the classification stays pure (no Foundation error-domain matching needed).
+    static func classify(errorCode: Int) -> Kind {
+        switch errorCode {
+        case -1009: return .offline      // NSURLErrorNotConnectedToInternet
+        case -1001: return .timedOut     // NSURLErrorTimedOut
+        case -1003, // NSURLErrorCannotFindHost
+             -1006: return .cannotReach  // NSURLErrorDNSLookupFailed
+        default: return .generic
+        }
+    }
+
+    /// Error codes that are NOT real load failures and must not trigger the fallback:
+    /// a navigation the app itself cancelled (e.g. our policy/new-window handling) or a
+    /// load interrupted by a policy decision. Showing an error page for these would
+    /// replace good content with a spurious error.
+    static func isIgnorable(errorCode: Int) -> Bool {
+        // NSURLErrorCancelled (-999) and WebKitErrorFrameLoadInterruptedByPolicyChange (102).
+        errorCode == -999 || errorCode == 102
+    }
+
+    /// The fallback HTML. `backgroundColor` (when given, a CSS color from the manifest)
+    /// tints the page so it matches the app even in the error state; otherwise the page
+    /// adapts to light/dark. `appName` and `host` are HTML-escaped by the caller-facing
+    /// `escape` here.
+    static func html(appName: String, host: String?, kind: Kind, backgroundColor: String?) -> String {
+        let headline = escape(kind.headline)
+        let message = escape(kind.message(host: host))
+        // When the manifest gave a background color, honor it for both schemes; else use
+        // neutral light/dark surfaces.
+        let bgRule: String
+        if let backgroundColor, !backgroundColor.isEmpty {
+            bgRule = "background: \(escape(backgroundColor));"
+        } else {
+            bgRule = "background: #fafafa;"
+        }
+        return """
+        <!doctype html>
+        <html lang="en">
+        <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>\(escape(appName))</title>
+        <style>
+          :root {
+            --fg: #1c1c1e; --muted: #6b6b70; --accent: #2563eb;
+            --accent-fg: #ffffff; --border: rgba(0,0,0,0.12);
+          }
+          @media (prefers-color-scheme: dark) {
+            :root {
+              --fg: #f2f2f7; --muted: #9a9aa0; --accent: #3b82f6;
+              --accent-fg: #ffffff; --border: rgba(255,255,255,0.16);
+            }
+          }
+          * { box-sizing: border-box; }
+          html, body { height: 100%; margin: 0; }
+          body {
+            \(bgRule)
+            color: var(--fg);
+            font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+            display: flex; align-items: center; justify-content: center;
+            -webkit-font-smoothing: antialiased;
+          }
+          .card {
+            text-align: center; padding: 24px; max-width: 30rem;
+          }
+          .icon { color: var(--muted); margin-bottom: 16px; }
+          .icon svg { width: 44px; height: 44px; }
+          h1 { font-size: 20px; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 8px; }
+          p { color: var(--muted); margin: 0 auto 24px; max-width: 24rem; }
+          button {
+            font: inherit; font-weight: 500;
+            color: var(--accent-fg); background: var(--accent);
+            border: 0; border-radius: 6px; padding: 9px 18px; cursor: pointer;
+            transition: opacity 160ms ease-out;
+          }
+          button:hover { opacity: 0.92; }
+          button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+          @media (prefers-reduced-motion: reduce) { button { transition: none; } }
+        </style>
+        </head>
+        <body>
+          <div class="card">
+            <div class="icon" aria-hidden="true">
+              <!-- wifi-off, Lucide-style line icon, inherits currentColor -->
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
+                   stroke-linecap="round" stroke-linejoin="round">
+                <path d="M2 2l20 20"/>
+                <path d="M8.5 16.5a5 5 0 0 1 7 0"/>
+                <path d="M5 12.9a10 10 0 0 1 5.2-2.8"/>
+                <path d="M19 12.9a10 10 0 0 0-3.6-2.5"/>
+                <path d="M2 8.8a16 16 0 0 1 4.5-2.6"/>
+                <path d="M22 8.8a16 16 0 0 0-9.4-2.7"/>
+                <path d="M12 20h.01"/>
+              </svg>
+            </div>
+            <h1>\(headline)</h1>
+            <p>\(message)</p>
+            <button onclick="window.webkit.messageHandlers.webwrapRetry.postMessage('retry')">Try Again</button>
+          </div>
+        </body>
+        </html>
+        """
+    }
+
+    /// Minimal HTML-text escaping for values interpolated into the page.
+    static func escape(_ s: String) -> String {
+        s.replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "'", with: "&#39;")
     }
 }
