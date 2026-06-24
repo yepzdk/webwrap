@@ -32,12 +32,13 @@ final class InfoPlistTests: XCTestCase {
                        width: Int = 1200,
                        height: Int = 800,
                        showToolbar: Bool = false,
+                       backgroundColor: String? = nil,
                        creatorVersion: String = "0.3.0") -> String {
         AppBuilder.makeInfoPlist(
             name: name, url: url, bundleId: bundleId,
             executable: "webwrap-host", iconFile: "AppIcon.icns",
             width: width, height: height, showToolbar: showToolbar,
-            creatorVersion: creatorVersion)
+            backgroundColor: backgroundColor, creatorVersion: creatorVersion)
     }
 
     func testContainsExpectedKeysAndValues() {
@@ -58,6 +59,24 @@ final class InfoPlistTests: XCTestCase {
     func testToolbarKeyReflectsFlag() {
         XCTAssertTrue(plist(showToolbar: true).contains("<key>WebWrapToolbar</key>\n    <string>1</string>"))
         XCTAssertTrue(plist(showToolbar: false).contains("<key>WebWrapToolbar</key>\n    <string>0</string>"))
+    }
+
+    func testBackgroundColorKeyOmittedWhenNil() {
+        XCTAssertFalse(plist(backgroundColor: nil).contains("WebWrapBackgroundColor"))
+    }
+
+    func testBackgroundColorKeyEmittedWhenSet() {
+        XCTAssertTrue(plist(backgroundColor: "#1a73e8")
+            .contains("<key>WebWrapBackgroundColor</key>\n    <string>#1a73e8</string>"))
+    }
+
+    func testRemainsValidPlistWithBackgroundColor() throws {
+        // Guards the conditional-line interpolation against stray-whitespace breakage.
+        let xml = plist(backgroundColor: "#1a73e8")
+        let obj = try PropertyListSerialization.propertyList(from: Data(xml.utf8), format: nil)
+        let dict = try XCTUnwrap(obj as? [String: Any])
+        XCTAssertEqual(dict["WebWrapBackgroundColor"] as? String, "#1a73e8")
+        XCTAssertEqual(dict["WebWrapToolbar"] as? String, "0")
     }
 
     func testEscapesNameAndURL() {

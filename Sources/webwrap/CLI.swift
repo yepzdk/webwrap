@@ -148,7 +148,8 @@ struct Update: ParsableCommand {
             sign: !noSign,
             signIdentity: sign,
             notarize: notarize,
-            notaryProfile: notaryProfile
+            notaryProfile: notaryProfile,
+            backgroundColor: merged.backgroundColor
         )
         let newPath = try builder.build()
 
@@ -217,7 +218,12 @@ struct Create: ParsableCommand {
             // Both supplied — non-interactive path. Validate, then build directly.
             try Self.validate(url: url)
             try Self.validate(name: name)
-            try build(url: url, name: name, resolvedIcon: nil)
+            // Resolve icon + manifest metadata in one pass (skipped when an explicit
+            // --icon is given). We still want the manifest's background color even when
+            // the name came from a flag.
+            let site = resolveSite(url: url)
+            try build(url: url, name: name,
+                      resolvedIcon: site.icon, metadata: site.metadata)
             return
         }
 
@@ -248,10 +254,26 @@ struct Create: ParsableCommand {
             resolvedURL = entered
         }
 
-        // 2. Name (default suggested from the host; re-prompt if blank).
+        // 2. Resolve the icon + manifest metadata up front (one network pass) so the
+        // name step can default from the manifest and the summary can report the icon.
+        print("Resolving icon…")
+        let site = resolveSite(url: resolvedURL)
+        let iconDescription: String
+        if icon != nil {
+            iconDescription = "from \(icon!)"
+        } else if let resolved = site.icon {
+            iconDescription = resolved.source.rawValue
+        } else {
+            iconDescription = "none found — default icon"
+        }
+
+        // 3. Name. Prefer an explicit --name; otherwise suggest from the manifest
+        // (short_name/name), then fall back to the host-label guess.
         let resolvedName: String
         if let presetName { resolvedName = presetName } else {
-            let suggestion = Self.suggestName(fromURL: resolvedURL) ?? ""
+            let suggestion = site.metadata.preferredName
+                ?? Self.suggestName(fromURL: resolvedURL)
+                ?? ""
             if suggestion.isEmpty {
                 guard let entered = Prompt.ask("Name: ", validate: { input -> Prompt.Validation<String> in
                     input.isEmpty ? .invalid("Name must not be empty.") : .valid(input)
@@ -262,21 +284,10 @@ struct Create: ParsableCommand {
             }
         }
 
-        // 3. Resolve the icon up front so the summary can report its source.
-        print("Resolving icon…")
-        let resolvedIcon = icon == nil ? IconResolver(urlString: resolvedURL)?.resolve() : nil
-        let iconDescription: String
-        if icon != nil {
-            iconDescription = "from \(icon!)"
-        } else if let resolvedIcon {
-            iconDescription = resolvedIcon.source.rawValue
-        } else {
-            iconDescription = "none found — default icon"
-        }
-
         // 4. Summary + confirm.
         let bundleIdentifier = AppBuilder.defaultBundleId(name: resolvedName, override: bundleId)
         let destination = (output as NSString).appendingPathComponent("\(resolvedName).app")
+        let bgDescription = site.metadata.launchBackgroundColor.map { "\($0) (from manifest)" } ?? "default"
         print("""
 
         Summary
@@ -285,6 +296,7 @@ struct Create: ParsableCommand {
           Bundle ID:   \(bundleIdentifier)
           Icon:        \(iconDescription)
           Toolbar:     \(toolbar ? "yes" : "no")
+          Background:  \(bgDescription)
           Signing:     \(Self.signingDescription(noSign: noSign, sign: sign, notarize: notarize))
           Destination: \(destination)
         """)
@@ -293,12 +305,25 @@ struct Create: ParsableCommand {
             throw CleanExit.message("Aborted — nothing was written.")
         }
 
-        try build(url: resolvedURL, name: resolvedName, resolvedIcon: resolvedIcon)
+        try build(url: resolvedURL, name: resolvedName,
+                  resolvedIcon: site.icon, metadata: site.metadata)
+    }
+
+    /// Resolves the site's icon and manifest metadata in a single network pass. When an
+    /// explicit `--icon` is given, the icon isn't fetched (the file is used instead), but
+    /// the manifest is still consulted for metadata (name/background).
+    private func resolveSite(url: String) -> (icon: IconResolver.Resolved?, metadata: IconResolver.SiteMetadata) {
+        guard let resolver = IconResolver(urlString: url) else { return (nil, IconResolver.SiteMetadata()) }
+        let result = resolver.resolveWithMetadata()
+        // Discard the resolved icon when the user supplied their own file.
+        return (icon == nil ? result.icon : nil, result.metadata)
     }
 
     // MARK: - Build
 
-    private func build(url: String, name: String, resolvedIcon: IconResolver.Resolved?) throws {
+    private func build(url: String, name: String,
+                       resolvedIcon: IconResolver.Resolved?,
+                       metadata: IconResolver.SiteMetadata) throws {
         let builder = AppBuilder(
             url: url,
             name: name,
@@ -313,7 +338,8 @@ struct Create: ParsableCommand {
             signIdentity: sign,
             notarize: notarize,
             notaryProfile: notaryProfile,
-            resolvedIcon: resolvedIcon
+            resolvedIcon: resolvedIcon,
+            backgroundColor: metadata.launchBackgroundColor
         )
         let appPath = try builder.build()
         print("✓ Created \(appPath)")

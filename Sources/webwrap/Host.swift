@@ -84,6 +84,19 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         webView.allowsBackForwardNavigationGestures = true
         window.contentView!.addSubview(webView)
 
+        // Paint the window and the web view's under-page area with the manifest's
+        // background color so the first frame isn't a white flash before the page
+        // renders. Skipped when there's no color or it isn't a form we parse.
+        // `underPageBackgroundColor` is the public API for this (macOS 12+, so always
+        // available at our 13 deployment target) — avoid the `drawsBackground` KVC
+        // trick, which reaches a private ivar and raises on current WebKit SDKs.
+        if let raw = info("WebWrapBackgroundColor"), let rgba = CSSColor.parse(raw) {
+            let color = NSColor(red: rgba.red, green: rgba.green,
+                                blue: rgba.blue, alpha: rgba.alpha)
+            window.backgroundColor = color
+            webView.underPageBackgroundColor = color
+        }
+
         // A real main menu is required for the standard editing shortcuts (⌘C/⌘V/⌘X/⌘A)
         // to reach the focused web content — without it, paste silently does nothing.
         // It also provides Quit and the About panel.
@@ -365,5 +378,46 @@ enum HostNavigation {
     /// menu item is enabled, so the two can't disagree.
     static func urlToCopy(currentURL: URL?) -> String? {
         currentURL?.absoluteString
+    }
+}
+
+/// Pure CSS-color parsing for the manifest-derived window background, kept free of
+/// AppKit so it's unit-testable. Supports hex forms (`#rgb`, `#rgba`, `#rrggbb`,
+/// `#rrggbbaa`) — the forms web app manifests overwhelmingly use. Unrecognized
+/// strings (named colors, `rgb()`, etc.) return nil and the app keeps its default
+/// background rather than guessing.
+enum CSSColor {
+    /// Red, green, blue, alpha — each 0...1.
+    struct RGBA: Equatable {
+        let red, green, blue, alpha: Double
+    }
+
+    static func parse(_ string: String) -> RGBA? {
+        let s = string.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard s.hasPrefix("#") else { return nil }
+        let hex = String(s.dropFirst())
+        guard hex.allSatisfy(\.isHexDigit) else { return nil }
+
+        // Expand shorthand (#rgb / #rgba) to the full per-channel byte form.
+        let full: String
+        switch hex.count {
+        case 3, 4:
+            full = hex.map { "\($0)\($0)" }.joined()
+        case 6, 8:
+            full = hex
+        default:
+            return nil
+        }
+
+        func channel(_ offset: Int) -> Double {
+            let start = full.index(full.startIndex, offsetBy: offset)
+            let end = full.index(start, offsetBy: 2)
+            return Double(Int(full[start..<end], radix: 16) ?? 0) / 255.0
+        }
+        return RGBA(
+            red: channel(0),
+            green: channel(2),
+            blue: channel(4),
+            alpha: full.count == 8 ? channel(6) : 1.0)
     }
 }

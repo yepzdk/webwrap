@@ -46,6 +46,8 @@ webwrap create --url https://outlook.office.com --name "Outlook"
 
 This writes `Outlook.app` to `/Applications`, resolving the best available icon for the site automatically — it checks the web app manifest, `apple-touch-icon`, `<link rel="icon">`, and `/favicon.ico` (in that order), falling back to a favicon service.
 
+From the same web app manifest, `webwrap` also picks up a couple of smart defaults: it suggests the app name from the manifest's `short_name`/`name` (in interactive mode), and paints the window with the manifest's `background_color` (or `theme_color`) so launch doesn't flash white before the page loads. Both are overridable, and reading the manifest costs no extra request — it's shared with icon resolution.
+
 ### Interactive mode
 
 Run `webwrap create` with no `--url`/`--name` and it prompts you:

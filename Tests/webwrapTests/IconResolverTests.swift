@@ -212,4 +212,91 @@ final class ResolveChainTests: XCTestCase {
         let r = resolver(site: "https://example.com/", responses: [:])
         XCTAssertNil(r.resolve())
     }
+
+    func testResolveWithMetadataSharesManifestFetch() {
+        // A single pass yields both the manifest icon and the manifest metadata.
+        let r = resolver(site: "https://example.com/", responses: [
+            "https://example.com/": Data(#"<link rel="manifest" href="/m.json">"#.utf8),
+            "https://example.com/m.json": Data(##"{"name":"Example App","short_name":"Example","theme_color":"#102030","background_color":"#abcdef","icons":[{"src":"/i.png","sizes":"512x512","type":"image/png"}]}"##.utf8),
+            "https://example.com/i.png": Data("PNG".utf8),
+        ])
+        let result = r.resolveWithMetadata()
+        XCTAssertEqual(result.icon?.source, .manifest)
+        XCTAssertEqual(result.metadata.name, "Example App")
+        XCTAssertEqual(result.metadata.shortName, "Example")
+        XCTAssertEqual(result.metadata.themeColor, "#102030")
+        XCTAssertEqual(result.metadata.backgroundColor, "#abcdef")
+    }
+
+    func testResolveWithMetadataEmptyWhenNoManifest() {
+        let r = resolver(site: "https://example.com/", responses: [
+            "https://example.com/": Data("<html></html>".utf8),
+            "https://www.google.com/s2/favicons?sz=256&domain=example.com": Data("G".utf8),
+        ])
+        let result = r.resolveWithMetadata()
+        XCTAssertEqual(result.icon?.source, .googleService) // icon still resolves
+        XCTAssertEqual(result.metadata, IconResolver.SiteMetadata()) // but no metadata
+    }
+}
+
+final class ManifestMetadataTests: XCTestCase {
+    private func parse(_ json: String) -> IconResolver.SiteMetadata {
+        IconResolver.parseMetadata(fromManifestJSON: Data(json.utf8))
+    }
+
+    func testParsesAllFields() {
+        let m = parse(##"{"name":"Full Name","short_name":"Short","theme_color":"#111","background_color":"#222"}"##)
+        XCTAssertEqual(m, IconResolver.SiteMetadata(
+            name: "Full Name", shortName: "Short", themeColor: "#111", backgroundColor: "#222"))
+    }
+
+    func testMissingFieldsStayNil() {
+        let m = parse(#"{"name":"Only Name"}"#)
+        XCTAssertEqual(m.name, "Only Name")
+        XCTAssertNil(m.shortName)
+        XCTAssertNil(m.themeColor)
+        XCTAssertNil(m.backgroundColor)
+    }
+
+    func testBlankStringsTreatedAsNil() {
+        let m = parse(#"{"name":"   ","short_name":""}"#)
+        XCTAssertNil(m.name)
+        XCTAssertNil(m.shortName)
+    }
+
+    func testMalformedJSONYieldsEmpty() {
+        XCTAssertEqual(parse("not json"), IconResolver.SiteMetadata())
+    }
+
+    func testNonObjectJSONYieldsEmpty() {
+        XCTAssertEqual(parse("[1,2,3]"), IconResolver.SiteMetadata())
+    }
+
+    func testPreferredNamePrefersShortName() {
+        let m = IconResolver.SiteMetadata(name: "Long Name", shortName: "Short")
+        XCTAssertEqual(m.preferredName, "Short")
+    }
+
+    func testPreferredNameFallsBackToName() {
+        let m = IconResolver.SiteMetadata(name: "Long Name", shortName: nil)
+        XCTAssertEqual(m.preferredName, "Long Name")
+    }
+
+    func testPreferredNameNilWhenNeither() {
+        XCTAssertNil(IconResolver.SiteMetadata().preferredName)
+    }
+
+    func testLaunchBackgroundPrefersBackgroundColor() {
+        let m = IconResolver.SiteMetadata(themeColor: "#theme", backgroundColor: "#bg")
+        XCTAssertEqual(m.launchBackgroundColor, "#bg")
+    }
+
+    func testLaunchBackgroundFallsBackToThemeColor() {
+        let m = IconResolver.SiteMetadata(themeColor: "#theme", backgroundColor: nil)
+        XCTAssertEqual(m.launchBackgroundColor, "#theme")
+    }
+
+    func testLaunchBackgroundNilWhenNeither() {
+        XCTAssertNil(IconResolver.SiteMetadata().launchBackgroundColor)
+    }
 }

@@ -18,11 +18,23 @@ final class AppConfigParseTests: XCTestCase {
             "WebWrapWidth": "1000",
             "WebWrapHeight": "700",
             "WebWrapToolbar": "1",
+            "WebWrapBackgroundColor": "#1a73e8",
         ])
         XCTAssertEqual(AppConfig.parse(plistData: data),
                        AppConfig(url: "https://outlook.office.com", name: "Outlook",
                                  bundleId: "dk.yepz.webwrap.outlook", width: 1000, height: 700,
-                                 showToolbar: true))
+                                 showToolbar: true, backgroundColor: "#1a73e8"))
+    }
+
+    func testBackgroundColorAbsentParsesNil() {
+        let cfg = AppConfig.parse(plistData: plist(["WebWrapURL": "https://x.test"]))
+        XCTAssertNil(cfg?.backgroundColor)
+    }
+
+    func testBackgroundColorEmptyParsesNil() {
+        let cfg = AppConfig.parse(plistData: plist([
+            "WebWrapURL": "https://x.test", "WebWrapBackgroundColor": ""]))
+        XCTAssertNil(cfg?.backgroundColor)
     }
 
     func testToolbarDefaultsOffWhenAbsent() {
@@ -56,7 +68,7 @@ final class AppConfigParseTests: XCTestCase {
 final class AppConfigApplyTests: XCTestCase {
     private let base = AppConfig(url: "https://old.test", name: "Old",
                                  bundleId: "dk.yepz.webwrap.old", width: 1200, height: 800,
-                                 showToolbar: false)
+                                 showToolbar: false, backgroundColor: "#123456")
 
     func testNoOverridesCarriesEverything() {
         XCTAssertEqual(base.applying(), base)
@@ -88,5 +100,16 @@ final class AppConfigApplyTests: XCTestCase {
         // A nil override (flag omitted on `update`) keeps the existing setting.
         let on = base.applying(showToolbar: true)
         XCTAssertTrue(on.applying(url: "https://new.test").showToolbar)
+    }
+
+    func testBackgroundColorCarriedOverByDefault() {
+        // The default `applying()` (no backgroundColor arg) keeps the existing color.
+        XCTAssertEqual(base.applying(url: "https://new.test").backgroundColor, "#123456")
+    }
+
+    func testBackgroundColorCanBeReplacedAndCleared() {
+        XCTAssertEqual(base.applying(backgroundColor: "#abcdef").backgroundColor, "#abcdef")
+        // .some(nil) clears it (double-optional inner nil).
+        XCTAssertNil(base.applying(backgroundColor: .some(nil)).backgroundColor)
     }
 }

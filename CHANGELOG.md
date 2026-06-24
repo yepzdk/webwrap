@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   forward buttons enable/disable with the page history.
 - **Copy Current URL** (Edit menu, ⌘⇧C) copies the current page's address — handy
   since the window has no address bar. Disabled when no page is loaded.
+- `create` now reads the site's web app manifest for smart defaults: the app name
+  is suggested from `short_name`/`name` (interactive flow), and the window is painted
+  with the manifest's `background_color` (falling back to `theme_color`) to avoid a
+  white first-paint flash. Both are still overridable, and the manifest fetch is
+  shared with icon resolution (no extra request).
 
 ### Changed
 - The View menu's **Back** and **Forward** items now disable when there's no history
