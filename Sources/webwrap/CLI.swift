@@ -52,6 +52,10 @@ struct Update: ParsableCommand {
     @Option(name: .long, help: "New initial window height in points.")
     var height: Int?
 
+    @Flag(name: .long, inversion: .prefixedNo,
+          help: "Show or hide the navigation toolbar (back/forward/reload). If omitted, the current setting is kept.")
+    var toolbar: Bool?
+
     @Flag(name: .long, help: "Skip ad-hoc code signing.")
     var noSign: Bool = false
 
@@ -83,7 +87,8 @@ struct Update: ParsableCommand {
         if let url { try Create.validate(url: url) }
         if let name { try Create.validate(name: name) }
 
-        let merged = existing.applying(url: url, name: name, width: width, height: height)
+        let merged = existing.applying(url: url, name: name, width: width, height: height,
+                                       showToolbar: toolbar)
         let outputDir = (appPath as NSString).deletingLastPathComponent
         let renamed = merged.name != existing.name
 
@@ -93,6 +98,9 @@ struct Update: ParsableCommand {
         if renamed { changes.append("Name → \(merged.name) (bundle renamed)") }
         if merged.width != existing.width || merged.height != existing.height {
             changes.append("Size → \(merged.width)×\(merged.height)")
+        }
+        if merged.showToolbar != existing.showToolbar {
+            changes.append("Toolbar → \(merged.showToolbar ? "shown" : "hidden")")
         }
         if icon != nil { changes.append("Icon → \(icon!)") }
         print("Updating \(existing.name) at \(appPath):")
@@ -135,6 +143,7 @@ struct Update: ParsableCommand {
             iconPath: iconForBuild,
             width: merged.width,
             height: merged.height,
+            showToolbar: merged.showToolbar,
             force: true,
             sign: !noSign,
             signIdentity: sign,
@@ -181,6 +190,10 @@ struct Create: ParsableCommand {
 
     @Option(name: .long, help: "Initial window height in points.")
     var height: Int = 800
+
+    @Flag(name: .long, inversion: .prefixedNo,
+          help: "Show a navigation toolbar (back/forward/reload) in the window. Off by default.")
+    var toolbar: Bool = false
 
     @Flag(name: .long, help: "Overwrite the destination .app if it already exists.")
     var force: Bool = false
@@ -271,6 +284,7 @@ struct Create: ParsableCommand {
           URL:         \(resolvedURL)
           Bundle ID:   \(bundleIdentifier)
           Icon:        \(iconDescription)
+          Toolbar:     \(toolbar ? "yes" : "no")
           Signing:     \(Self.signingDescription(noSign: noSign, sign: sign, notarize: notarize))
           Destination: \(destination)
         """)
@@ -293,6 +307,7 @@ struct Create: ParsableCommand {
             iconPath: icon,
             width: width,
             height: height,
+            showToolbar: toolbar,
             force: force,
             sign: !noSign,
             signIdentity: sign,

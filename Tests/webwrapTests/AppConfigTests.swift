@@ -17,10 +17,24 @@ final class AppConfigParseTests: XCTestCase {
             "CFBundleIdentifier": "dk.yepz.webwrap.outlook",
             "WebWrapWidth": "1000",
             "WebWrapHeight": "700",
+            "WebWrapToolbar": "1",
         ])
         XCTAssertEqual(AppConfig.parse(plistData: data),
                        AppConfig(url: "https://outlook.office.com", name: "Outlook",
-                                 bundleId: "dk.yepz.webwrap.outlook", width: 1000, height: 700))
+                                 bundleId: "dk.yepz.webwrap.outlook", width: 1000, height: 700,
+                                 showToolbar: true))
+    }
+
+    func testToolbarDefaultsOffWhenAbsent() {
+        // Apps created before the toolbar flag have no WebWrapToolbar key.
+        let cfg = AppConfig.parse(plistData: plist(["WebWrapURL": "https://x.test"]))
+        XCTAssertEqual(cfg?.showToolbar, false)
+    }
+
+    func testToolbarZeroParsesAsOff() {
+        let cfg = AppConfig.parse(plistData: plist([
+            "WebWrapURL": "https://x.test", "WebWrapToolbar": "0"]))
+        XCTAssertEqual(cfg?.showToolbar, false)
     }
 
     func testNilForNonWebwrapPlist() {
@@ -41,7 +55,8 @@ final class AppConfigParseTests: XCTestCase {
 
 final class AppConfigApplyTests: XCTestCase {
     private let base = AppConfig(url: "https://old.test", name: "Old",
-                                 bundleId: "dk.yepz.webwrap.old", width: 1200, height: 800)
+                                 bundleId: "dk.yepz.webwrap.old", width: 1200, height: 800,
+                                 showToolbar: false)
 
     func testNoOverridesCarriesEverything() {
         XCTAssertEqual(base.applying(), base)
@@ -61,5 +76,17 @@ final class AppConfigApplyTests: XCTestCase {
         let renamed = base.applying(name: "BrandNew")
         XCTAssertEqual(renamed.name, "BrandNew")
         XCTAssertEqual(renamed.bundleId, "dk.yepz.webwrap.old")
+    }
+
+    func testToolbarOverrideToggles() {
+        XCTAssertTrue(base.applying(showToolbar: true).showToolbar)
+        let on = base.applying(showToolbar: true)
+        XCTAssertFalse(on.applying(showToolbar: false).showToolbar)
+    }
+
+    func testToolbarCarriedOverWhenNil() {
+        // A nil override (flag omitted on `update`) keeps the existing setting.
+        let on = base.applying(showToolbar: true)
+        XCTAssertTrue(on.applying(url: "https://new.test").showToolbar)
     }
 }

@@ -79,6 +79,7 @@ It validates the URL (re-prompting if it's not absolute), suggests a name from t
 | `--icon` | Path to a `.png` or `.icns` icon | resolved from site |
 | `--width` | Initial window width (points) | `1200` |
 | `--height` | Initial window height (points) | `800` |
+| `--toolbar` | Show a navigation toolbar (back/forward/reload) | off |
 | `--force` | Overwrite an existing `.app` | off |
 | `--no-sign` | Skip ad-hoc code signing | off |
 | `--sign` | Sign with a Developer ID identity (enables the hardened runtime) | ad-hoc |
@@ -129,6 +130,7 @@ webwrap update "/Applications/Outlook.app" --url https://outlook.office365.com -
 | `-n, --name` | New display name (renames the `.app`; session still carried over) |
 | `--icon` | New `.png`/`.icns` icon (existing icon kept if omitted) |
 | `--width`, `--height` | New window size |
+| `--toolbar` / `--no-toolbar` | Show or hide the navigation toolbar (current setting kept if omitted) |
 | `--sign`, `--notarize`, `--notary-profile`, `--no-sign` | Signing, same as `create` |
 | `--force` | Skip the confirmation prompt |
 
