@@ -26,6 +26,11 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     private var intendedURL: URL?
     /// Raw manifest background color (if any), reused to tint the offline page.
     private var backgroundColorRaw: String?
+    /// True while the offline fallback page is the visible content. Gates the Retry
+    /// message handler so only the fallback page (not the live site) can trigger a
+    /// reload — independent of any assumption about what `webView.url` becomes when the
+    /// fallback is shown via `loadHTMLString`.
+    private var isShowingFallback = false
 
     private func info(_ key: String) -> String? {
         Bundle.main.object(forInfoDictionaryKey: key) as? String
@@ -121,7 +126,7 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
 
         if let url = URL(string: urlString) {
             intendedURL = url
-            webView.load(URLRequest(url: url))
+            loadIntendedURL()
         }
 
         window.center()
@@ -383,19 +388,27 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         let html = OfflineFallback.html(appName: appName, host: host, kind: kind,
                                         backgroundColor: backgroundColorRaw)
         // baseURL nil: the page is fully self-contained (inline CSS, no external refs).
+        isShowingFallback = true
         webView.loadHTMLString(html, baseURL: nil)
+    }
+
+    /// Loads the intended site URL and clears the fallback flag. All real-site loads go
+    /// through here so `isShowingFallback` is only ever true while the offline page is up.
+    private func loadIntendedURL() {
+        guard let url = intendedURL else { return }
+        isShowingFallback = false
+        webView.load(URLRequest(url: url))
     }
 
     // Retry button on the fallback page posts here; reload the intended site URL.
     func userContentController(_ userContentController: WKUserContentController,
                                didReceive message: WKScriptMessage) {
-        guard message.name == "webwrapRetry", let url = intendedURL else { return }
         // The message handler is controller-wide, so the live site's JS could also post
-        // to it. Only honor Retry while the fallback page is showing (loadHTMLString with
-        // a nil base URL leaves the web view with no real URL), not from the live site.
-        let current = webView.url
-        guard current == nil || current?.scheme == "about" else { return }
-        webView.load(URLRequest(url: url))
+        // to it. Only honor Retry while the fallback page is actually showing — tracked
+        // explicitly rather than inferred from webView.url, whose value after
+        // loadHTMLString isn't something we want to depend on.
+        guard message.name == "webwrapRetry", isShowingFallback else { return }
+        loadIntendedURL()
     }
 }
 
