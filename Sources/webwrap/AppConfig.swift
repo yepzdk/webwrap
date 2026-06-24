@@ -12,6 +12,10 @@ struct AppConfig: Equatable {
     /// Whether the app shows a navigation toolbar (back/forward/reload). Off by default
     /// to keep the chromeless look; opt in with `--toolbar`.
     var showToolbar: Bool
+    /// Window background color (a CSS color string, e.g. "#1a73e8"), used to avoid a
+    /// white first-paint flash. Nil when unset. Derived from the site's manifest at
+    /// create time; carried over on update.
+    var backgroundColor: String?
 
     /// Parses an existing app's `Info.plist` bytes into an `AppConfig`, or nil if the
     /// bundle isn't a webwrap app (no `WebWrapURL` marker) or can't be parsed. Pure.
@@ -27,8 +31,12 @@ struct AppConfig: Equatable {
         let height = Int((dict["WebWrapHeight"] as? String) ?? "") ?? 800
         // Stored as "1"/"0"; absent (older apps) means no toolbar.
         let showToolbar = (dict["WebWrapToolbar"] as? String) == "1"
+        // Optional; absent on older apps and sites without a manifest color.
+        let backgroundColor = (dict["WebWrapBackgroundColor"] as? String)
+            .flatMap { $0.isEmpty ? nil : $0 }
         return AppConfig(url: url, name: name, bundleId: bundleId,
-                         width: width, height: height, showToolbar: showToolbar)
+                         width: width, height: height, showToolbar: showToolbar,
+                         backgroundColor: backgroundColor)
     }
 
     /// Reads the `AppConfig` from a bundle on disk, or nil if it isn't a webwrap app.
@@ -44,13 +52,16 @@ struct AppConfig: Equatable {
     /// (keyed to the bundle id) survives an update.
     func applying(url: String? = nil, name: String? = nil,
                   width: Int? = nil, height: Int? = nil,
-                  showToolbar: Bool? = nil) -> AppConfig {
+                  showToolbar: Bool? = nil,
+                  backgroundColor: String?? = nil) -> AppConfig {
         AppConfig(
             url: url ?? self.url,
             name: name ?? self.name,
             bundleId: self.bundleId,
             width: width ?? self.width,
             height: height ?? self.height,
-            showToolbar: showToolbar ?? self.showToolbar)
+            showToolbar: showToolbar ?? self.showToolbar,
+            // Double-optional: `nil` keeps the existing color; `.some(nil)` clears it.
+            backgroundColor: backgroundColor ?? self.backgroundColor)
     }
 }

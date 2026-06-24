@@ -27,6 +27,10 @@ struct AppBuilder {
     /// resolves up front to show the source in its summary). When set, the builder
     /// uses these bytes instead of fetching again. `iconPath` still takes precedence.
     var resolvedIcon: IconResolver.Resolved? = nil
+    /// Window background color (a CSS color string) baked into the bundle so the host
+    /// can paint the window before first paint. Nil when unknown. Typically the site's
+    /// manifest `background_color`/`theme_color`, resolved at create time.
+    var backgroundColor: String? = nil
 
     private let fm = FileManager.default
 
@@ -117,6 +121,7 @@ struct AppBuilder {
             width: width,
             height: height,
             showToolbar: showToolbar,
+            backgroundColor: backgroundColor,
             creatorVersion: WebWrap.configuration.version
         )
     }
@@ -132,10 +137,23 @@ struct AppBuilder {
                               width: Int,
                               height: Int,
                               showToolbar: Bool,
+                              backgroundColor: String? = nil,
                               creatorVersion: String) -> String {
         let escapedName = xmlEscape(name)
         let escapedURL = xmlEscape(url)
         let escapedCreator = xmlEscape(creatorVersion)
+        // Optional key: emitted only when a color is known, so older/manifest-less apps
+        // carry no WebWrapBackgroundColor at all. The newline keeps plist formatting tidy.
+        let backgroundColorEntry: String
+        if let backgroundColor, !backgroundColor.isEmpty {
+            backgroundColorEntry = """
+                <key>WebWrapBackgroundColor</key>
+                <string>\(xmlEscape(backgroundColor))</string>
+
+            """
+        } else {
+            backgroundColorEntry = ""
+        }
         return """
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -174,7 +192,7 @@ struct AppBuilder {
             <string>\(height)</string>
             <key>WebWrapToolbar</key>
             <string>\(showToolbar ? "1" : "0")</string>
-            <key>WebWrapCreatorVersion</key>
+            \(backgroundColorEntry)<key>WebWrapCreatorVersion</key>
             <string>\(escapedCreator)</string>
         </dict>
         </plist>

@@ -36,6 +36,44 @@ struct IconResolver {
         let source: Source
     }
 
+    /// Metadata harvested from a site's web app manifest, used at create time to pick
+    /// smart defaults (app name, window background). Every field is optional; a site
+    /// with no manifest (or a sparse one) yields an all-nil value.
+    struct SiteMetadata: Equatable {
+        /// The manifest's `name`.
+        var name: String?
+        /// The manifest's `short_name`.
+        var shortName: String?
+        /// The manifest's `theme_color` (a CSS color string as written in the manifest).
+        var themeColor: String?
+        /// The manifest's `background_color` (a CSS color string as written).
+        var backgroundColor: String?
+
+        /// The best display-name default from the manifest: `short_name` preferred (it's
+        /// meant for constrained spaces like an app label), then `name`. Nil if neither
+        /// is present or both are blank.
+        var preferredName: String? {
+            for candidate in [shortName, name] {
+                if let candidate, !candidate.trimmingCharacters(in: .whitespaces).isEmpty {
+                    return candidate.trimmingCharacters(in: .whitespaces)
+                }
+            }
+            return nil
+        }
+
+        /// The color to paint the window with to avoid a white first-paint flash:
+        /// `background_color` (whose spec purpose is exactly the launch background),
+        /// falling back to `theme_color`. Nil if neither is set.
+        var launchBackgroundColor: String? {
+            for candidate in [backgroundColor, themeColor] {
+                if let candidate, !candidate.trimmingCharacters(in: .whitespaces).isEmpty {
+                    return candidate.trimmingCharacters(in: .whitespaces)
+                }
+            }
+            return nil
+        }
+    }
+
     /// Fetches the bytes at a URL, or returns nil on any failure. Injected so tests
     /// can supply canned responses and the resolver never touches the real network.
     typealias Fetch = (URL) -> Data?
@@ -113,15 +151,34 @@ struct IconResolver {
 
     /// Walks the source chain and returns the first usable icon, or nil if none found.
     func resolve() -> Resolved? {
-        let html = fetch(siteURL).flatMap { String(data: $0, encoding: .utf8) } ?? ""
+        resolveWithMetadata().icon
+    }
 
-        if let resolved = resolveFromManifest(html: html) { return resolved }
-        if let resolved = resolveFromAppleTouchIcon(html: html) { return resolved }
-        if let resolved = resolveFromLinkIcon(html: html) { return resolved }
-        if let resolved = resolveFromOpenGraphImage(html: html) { return resolved }
-        if let resolved = resolveFromFaviconIco() { return resolved }
-        if let resolved = resolveFromGoogleService() { return resolved }
-        return nil
+    /// Resolves the icon AND the site's web-app-manifest metadata from a single pass,
+    /// so callers that want both (e.g. `create`, for default name + window background)
+    /// don't fetch the page/manifest twice. Either field may be nil independently.
+    func resolveWithMetadata() -> (icon: Resolved?, metadata: SiteMetadata) {
+        let html = fetch(siteURL).flatMap { String(data: $0, encoding: .utf8) } ?? ""
+        let metadata = resolveMetadata(html: html)
+
+        let icon = resolveFromManifest(html: html)
+            ?? resolveFromAppleTouchIcon(html: html)
+            ?? resolveFromLinkIcon(html: html)
+            ?? resolveFromOpenGraphImage(html: html)
+            ?? resolveFromFaviconIco()
+            ?? resolveFromGoogleService()
+        return (icon, metadata)
+    }
+
+    /// Fetches and parses the page's web app manifest into `SiteMetadata`. Best-effort:
+    /// a missing `<link rel="manifest">`, an unreachable manifest, or malformed JSON all
+    /// yield an empty `SiteMetadata` rather than failing.
+    private func resolveMetadata(html: String) -> SiteMetadata {
+        guard let manifestHref = Self.linkHref(in: html, matchingRel: "manifest"),
+              let manifestURL = Self.resolveURL(manifestHref, against: siteURL),
+              let manifestData = fetch(manifestURL)
+        else { return SiteMetadata() }
+        return Self.parseMetadata(fromManifestJSON: manifestData)
     }
 
     private func resolveFromManifest(html: String) -> Resolved? {
@@ -264,6 +321,24 @@ struct IconResolver {
             }
         }
         return best?.href ?? fallback
+    }
+
+    /// Parses display-name and color metadata from manifest JSON. Pure; tolerant of a
+    /// non-object or missing keys (each absent field stays nil).
+    static func parseMetadata(fromManifestJSON data: Data) -> SiteMetadata {
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return SiteMetadata()
+        }
+        func string(_ key: String) -> String? {
+            guard let value = obj[key] as? String else { return nil }
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+        return SiteMetadata(
+            name: string("name"),
+            shortName: string("short_name"),
+            themeColor: string("theme_color"),
+            backgroundColor: string("background_color"))
     }
 
     /// From manifest JSON, returns the href of the largest square icon, preferring PNG.
