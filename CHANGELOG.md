@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-24
+
 ### Added
 - `webwrap update <path>` updates a previously created app in place: it refreshes
   the embedded engine (so apps built by an older webwrap get the latest fixes) and
@@ -76,6 +78,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Test suite (`swift test`) covering `AppBuilder`'s pure helpers (slug, bundle id,
   `Info.plist` generation, XML escaping) plus the icon-resolution and CLI helpers.
 
-[Unreleased]: https://github.com/yepzdk/webwrap/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/yepzdk/webwrap/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/yepzdk/webwrap/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/yepzdk/webwrap/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/yepzdk/webwrap/releases/tag/v0.1.0

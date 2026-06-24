@@ -13,14 +13,18 @@ A **single binary** runs in two modes — this is the central design decision, d
 - **CLI mode**: `webwrap create ...` scaffolds an `.app`. Entry: `main.swift` → `WebWrap.main()` → `Create.run()` → `AppBuilder.build()`.
 - **Host mode**: the same binary is copied into the generated bundle's `Contents/MacOS/`. The bundle's `Info.plist` sets `WEBWRAP_HOST=1` via `LSEnvironment`. On launch, `main.swift` detects that variable and calls `runHost()` instead of parsing arguments.
 
-The target URL and window size are passed from CLI to host via custom `Info.plist` keys (`WebWrapURL`, `WebWrapWidth`, `WebWrapHeight`) baked in at create time.
+The target URL and window size are passed from CLI to host via custom `Info.plist` keys (`WebWrapURL`, `WebWrapWidth`, `WebWrapHeight`, and `WebWrapCreatorVersion` for the About panel) baked in at create time.
 
 ### Files
 
 - `Sources/webwrap/main.swift` — mode router (host vs CLI).
-- `Sources/webwrap/CLI.swift` — `ParsableCommand` definitions (`WebWrap`, `Create`).
-- `Sources/webwrap/Host.swift` — the `WKWebView` host (`runHost()` + `HostDelegate`).
-- `Sources/webwrap/AppBuilder.swift` — bundle scaffolding, `Info.plist`, icon conversion, signing.
+- `Sources/webwrap/CLI.swift` — `ParsableCommand` definitions (`WebWrap`, `Create`, `List`, `Update`).
+- `Sources/webwrap/Host.swift` — the `WKWebView` host (`runHost()` + `HostDelegate`), including the app's main menu and About panel.
+- `Sources/webwrap/AppBuilder.swift` — bundle scaffolding, `Info.plist`, icon conversion, signing, notarization.
+- `Sources/webwrap/IconResolver.swift` — resolves a site's best icon (manifest → apple-touch-icon → link icon → og:image → favicon → favicon service); pure parsing behind an injectable fetch.
+- `Sources/webwrap/AppConfig.swift` — reads a generated app's config back from its `Info.plist`; used by `update`.
+- `Sources/webwrap/AppRegistry.swift` — discovers installed webwrap apps; used by `list`.
+- `Sources/webwrap/Prompt.swift` — interactive stdin/stdout helpers for `create`'s prompt flow.
 
 ## Build & test
 
@@ -31,7 +35,7 @@ swift run webwrap create -u https://example.com -n "Example Test" -o /tmp --forc
 open /tmp/Example\ Test.app
 ```
 
-There is no test suite yet. When adding one, use `swift test` with an `xcunit`/`Testing` target and keep `AppBuilder`'s pure helpers (slug, plist generation, xml escaping) unit-testable by separating them from filesystem side effects.
+Tests live in `Tests/webwrapTests` and run with `swift test` (XCTest — not swift-testing, which isn't in the default `macos-14` CI runner toolchain). The pattern is to keep pure logic (slug/plist/xml-escape, icon URL parsing, squareness, config merge, signing-flag validation, About credits) separate from filesystem/process/network side effects, and unit-test the pure parts; AppKit menu wiring and real signing/notarization are verified by hand. CI runs the suite on every push/PR.
 
 ## Conventions (itk-dev)
 
@@ -56,12 +60,11 @@ The release binary is built universal so a single bottle serves both Apple Silic
 
 ## Signing & notarization
 
-Generated apps are ad-hoc signed only. Notarization (Developer ID + `xcrun notarytool`) is **not** implemented — it's the top roadmap item. When adding it: a `--sign "Developer ID Application: ..."` option on `Create`, then a `--notarize` flag that staples after `notarytool submit --wait`. The webwrap binary itself shipped via Homebrew should ideally also be notarized for the smoothest install, but that's separate from the apps it generates.
+Generated apps are **ad-hoc signed by default**. For distribution, `create`/`update` accept `--sign "Developer ID Application: ..."` (signs with the hardened runtime) and `--notarize` with `--notary-profile <name>` (zips, submits via `notarytool submit --wait`, then staples on acceptance). See `AppBuilder.codesign`/`notarizeAndStaple`. The webwrap binary *itself* shipped via Homebrew is **not yet notarized** — that's a separate follow-up (issue #25); it's low-urgency since Homebrew CLI tools rarely trip Gatekeeper.
 
 ## Known limitations / future ideas
 
-- Ad-hoc signing only; no notarization helper yet (top roadmap item — see above).
-- No `list`/`remove` subcommands for managing generated apps.
+- The webwrap CLI binary distributed via Homebrew is not itself notarized (#25).
 - Single window per app; no tabs.
-- Per-app session isolation requires macOS 14+ (`WKWebsiteDataStore(forIdentifier:)`); on macOS 13 apps share the default persistent store. See `Host.makeDataStore()`.
-- Favicon fallback can fail silently for sites with tiny/non-square icons.
+- Per-app session isolation requires macOS 14+ (`WKWebsiteDataStore(forIdentifier:)`); on macOS 13 apps share the default persistent store. See `Host.makeDataStore()`. The session is keyed to the bundle identifier, which `update` keeps stable so logins survive an update/rename.
+- No `remove` subcommand: `list` exists, but removing an app is left to the Trash (deliberate — see issue #5).
