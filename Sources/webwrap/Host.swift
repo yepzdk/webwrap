@@ -14,8 +14,11 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     /// KVO observations on the web view's navigation state, kept alive so the toolbar
     /// back/forward buttons can enable/disable themselves. Empty when no toolbar.
     private var navObservers: [NSKeyValueObservation] = []
-    private weak var backItem: NSToolbarItem?
-    private weak var forwardItem: NSToolbarItem?
+    // The embedded buttons themselves, not their NSToolbarItems: for a custom-view
+    // toolbar item, NSToolbarItem.isEnabled does NOT propagate to the embedded control,
+    // so enable/disable must target the NSButton directly.
+    private weak var backButton: NSButton?
+    private weak var forwardButton: NSButton?
 
     private func info(_ key: String) -> String? {
         Bundle.main.object(forInfoDictionaryKey: key) as? String
@@ -208,13 +211,14 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     }
 
     private func updateNavEnablement() {
-        backItem?.isEnabled = webView.canGoBack
-        forwardItem?.isEnabled = webView.canGoForward
+        backButton?.isEnabled = webView.canGoBack
+        forwardButton?.isEnabled = webView.canGoForward
     }
 
     /// Builds a borderless toolbar button backed by an SF Symbol, falling back to a
-    /// text title on older systems that lack the symbol.
-    private func makeToolbarItem(_ spec: ToolbarButton) -> NSToolbarItem {
+    /// text title on older systems that lack the symbol. Returns the item plus its
+    /// embedded button so the caller can drive the button's enabled state directly.
+    private func makeToolbarItem(_ spec: ToolbarButton) -> (item: NSToolbarItem, button: NSButton) {
         let label = spec.fallbackTitle // the title doubles as the accessibility label
         let item = NSToolbarItem(itemIdentifier: spec.id)
         item.label = label
@@ -231,7 +235,7 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
             button.title = spec.fallbackTitle
         }
         item.view = button
-        return item
+        return (item, button)
     }
 
     func toolbar(_ toolbar: NSToolbar,
@@ -240,11 +244,13 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         guard let spec = Self.toolbarButtons.first(where: { $0.id == itemIdentifier }) else {
             return nil
         }
-        let item = makeToolbarItem(spec)
+        let (item, button) = makeToolbarItem(spec)
         // Capture weak refs to the history buttons so their enabled state can be updated,
-        // then reflect the current (history-less) state now that the item actually exists.
-        if itemIdentifier == Self.backItemID { backItem = item }
-        if itemIdentifier == Self.forwardItemID { forwardItem = item }
+        // then reflect the current (history-less) state now that the button exists.
+        // (For a custom-view item, item.isEnabled wouldn't reach the button — see the
+        // backButton/forwardButton declarations.)
+        if itemIdentifier == Self.backItemID { backButton = button }
+        if itemIdentifier == Self.forwardItemID { forwardButton = button }
         updateNavEnablement()
         return item
     }
