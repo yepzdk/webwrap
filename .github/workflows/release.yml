@@ -52,8 +52,8 @@ jobs:
 
   # Bump the Homebrew formula in the yepzdk/homebrew-tools tap to point at the
   # release this tag just built, so `brew upgrade webwrap` picks it up without a
-  # manual formula edit. Requires a HOMEBREW_TAP_TOKEN secret: a PAT with contents
-  # write on the tap repo (the default GITHUB_TOKEN can't push cross-repo).
+  # manual formula edit. Requires a HOMEBREW_TAP_PAT secret on this repo: a PAT with
+  # contents write on the tap repo (the default GITHUB_TOKEN can't push cross-repo).
   update-tap:
     needs: build
     runs-on: ubuntu-latest
@@ -62,7 +62,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           repository: yepzdk/homebrew-tools
-          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          token: ${{ secrets.HOMEBREW_TAP_PAT }}
 
       - name: Bump the webwrap formula
         run: |
