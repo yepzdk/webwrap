@@ -68,6 +68,12 @@ struct Update: ParsableCommand {
           help: "With --handle-urls, also accept off-domain URLs (default: only same-site). If omitted, the current setting is kept.")
     var openAnyUrl: Bool?
 
+    @Option(name: .long, help: "Set the window background color (hex, e.g. #1a73e8). If omitted, it follows the new --url's manifest, else the current setting is kept.")
+    var backgroundColor: String?
+
+    @Flag(name: .long, help: "Clear the window background color (no color painted on launch).")
+    var noBackgroundColor: Bool = false
+
     @Flag(name: .long, help: "Skip ad-hoc code signing.")
     var noSign: Bool = false
 
@@ -85,6 +91,10 @@ struct Update: ParsableCommand {
 
     func run() throws {
         try Create.validateSigning(noSign: noSign, sign: sign, notarize: notarize, notaryProfile: notaryProfile)
+        if backgroundColor != nil && noBackgroundColor {
+            throw ValidationError("`--background-color` and `--no-background-color` are mutually exclusive.")
+        }
+        if let backgroundColor { try Create.validate(backgroundColor: backgroundColor) }
 
         let appPath = (path as NSString).standardizingPath
         let fm = FileManager.default
@@ -104,7 +114,8 @@ struct Update: ParsableCommand {
         // (or --force) keeps the existing flag-driven path.
         let anyOptionFlag = url != nil || name != nil || icon != nil || width != nil
             || height != nil || toolbar != nil || progressBar != nil || handleUrls != nil
-            || openAnyUrl != nil || sign != nil || noSign || notarize
+            || openAnyUrl != nil || backgroundColor != nil || noBackgroundColor
+            || sign != nil || noSign || notarize
         let mode = OptionDefaults.updateMode(isInteractive: Prompt.isInteractive,
                                              anyOptionFlag: anyOptionFlag, force: force)
 
@@ -132,8 +143,13 @@ struct Update: ParsableCommand {
                 throw CleanExit.message("Aborted — no changes made.")
             }
             try Create.validate(name: resolvedName)
-            guard let seed = promptForOptions(seed: OptionDefaults.forUpdate(existing: existing),
-                                              context: .update) else {
+            // If the URL changed, default the background prompt to the new site's manifest
+            // color so re-resolution is the interactive default too (still editable).
+            var updateSeed = OptionDefaults.forUpdate(existing: existing)
+            if resolvedURL != existing.url {
+                updateSeed.backgroundColor = Self.resolveManifestBackground(forURL: resolvedURL)
+            }
+            guard let seed = promptForOptions(seed: updateSeed, context: .update) else {
                 throw CleanExit.message("Aborted — no changes made.")
             }
             merged = existing.applying(
@@ -153,8 +169,18 @@ struct Update: ParsableCommand {
             // (otherwise the setting would be inert). Only forces it when the user is
             // enabling open-any-url, never overriding an explicit --no-handle-urls intent.
             let effectiveHandleURLs = (openAnyUrl == true && handleUrls == nil) ? true : handleUrls
+
+            // Background precedence: an explicit flag wins; otherwise a changed URL adopts
+            // the new site's manifest color (re-resolved here); otherwise it's carried over.
+            let urlChanged = url != nil && url != existing.url
+            let reResolved = urlChanged ? Self.resolveManifestBackground(forURL: url!) : nil
+            let background = OptionDefaults.resolveUpdateBackground(
+                explicit: backgroundColor, clear: noBackgroundColor,
+                urlChanged: urlChanged, reResolved: reResolved)
+
             merged = existing.applying(url: url, name: name, width: width, height: height,
                                        showToolbar: toolbar, progressBar: progressBar,
+                                       backgroundColor: background,
                                        handleURLs: effectiveHandleURLs, openAnyURL: openAnyUrl)
         }
 
@@ -246,6 +272,12 @@ struct Update: ParsableCommand {
         }
         print("✓ Updated \(newPath)")
     }
+
+    /// Re-resolves a site's manifest launch background color (nil if the site has none or
+    /// the URL can't be resolved). Used to make the background follow a changed `--url`.
+    private static func resolveManifestBackground(forURL url: String) -> String? {
+        IconResolver(urlString: url)?.resolveWithMetadata().metadata.launchBackgroundColor
+    }
 }
 
 struct Create: ParsableCommand {
@@ -293,6 +325,9 @@ struct Create: ParsableCommand {
     @Flag(name: .long, help: "With --handle-urls, also accept off-domain URLs (default: only same-site).")
     var openAnyUrl: Bool = false
 
+    @Option(name: .long, help: "Hex color painted behind the page on launch (e.g. #1a73e8). Overrides the site manifest's color.")
+    var backgroundColor: String?
+
     @Flag(name: .long, help: "Overwrite the destination .app if it already exists.")
     var force: Bool = false
 
@@ -315,6 +350,7 @@ struct Create: ParsableCommand {
 
     func run() throws {
         try Self.validateSigning(noSign: noSign, sign: sign, notarize: notarize, notaryProfile: notaryProfile)
+        if let backgroundColor { try Self.validate(backgroundColor: backgroundColor) }
         // Note the implication so `--open-any-url` alone isn't silently inert.
         if openAnyUrl && !handleUrls {
             FileHandle.standardError.write(Data(
@@ -355,6 +391,7 @@ struct Create: ParsableCommand {
             width: width, height: height, toolbar: toolbar, progressBar: progressBar,
             handleURLs: effectiveHandleURLs, openAnyURL: openAnyUrl,
             iconPath: icon, manifestBackground: manifest.launchBackgroundColor,
+            explicitBackground: backgroundColor,
             noSign: noSign, signIdentity: sign, notarize: notarize, notaryProfile: notaryProfile)
     }
 
@@ -501,6 +538,14 @@ struct Create: ParsableCommand {
     static func validate(name: String) throws {
         guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw ValidationError("Name must not be empty.")
+        }
+    }
+
+    /// Validates a window background color: must parse as a CSS color (e.g. #1a73e8).
+    /// Shared by `create --background-color` and `update --background-color`.
+    static func validate(backgroundColor: String) throws {
+        guard CSSColor.parse(backgroundColor) != nil else {
+            throw ValidationError("Background color must be a hex color like #1a73e8.")
         }
     }
 

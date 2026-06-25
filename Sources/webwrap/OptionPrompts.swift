@@ -36,16 +36,18 @@ enum CommandMode: Equatable {
 /// lives in `promptForOptions` below (hand-verified, like `Prompt`).
 enum OptionDefaults {
     /// Seed for interactive `create`, coalescing the flags to their effective defaults. The
-    /// background seed comes from the manifest when the site provided one.
+    /// background seed prefers an explicit `--background-color`, falling back to the
+    /// manifest's color when the site provided one.
     static func forCreate(width: Int, height: Int, toolbar: Bool, progressBar: Bool,
                           handleURLs: Bool, openAnyURL: Bool,
                           iconPath: String?, manifestBackground: String?,
+                          explicitBackground: String?,
                           noSign: Bool, signIdentity: String?,
                           notarize: Bool, notaryProfile: String?) -> OptionSeed {
         OptionSeed(
             width: width, height: height, toolbar: toolbar, progressBar: progressBar,
             handleURLs: handleURLs, openAnyURL: openAnyURL,
-            iconPath: iconPath, backgroundColor: manifestBackground,
+            iconPath: iconPath, backgroundColor: explicitBackground ?? manifestBackground,
             noSign: noSign, signIdentity: signIdentity,
             notarize: notarize, notaryProfile: notaryProfile)
     }
@@ -60,6 +62,22 @@ enum OptionDefaults {
             handleURLs: existing.handleURLs, openAnyURL: existing.openAnyURL,
             iconPath: nil, backgroundColor: existing.backgroundColor,
             noSign: false, signIdentity: nil, notarize: false, notaryProfile: nil)
+    }
+
+    /// Resolves what background color a flag-driven `update` should apply, as the
+    /// double-optional `AppConfig.applying(backgroundColor:)` expects: `nil` keeps the
+    /// existing color, `.some(nil)` clears it, `.some(x)` sets it. Pure — the `reResolved`
+    /// value is fetched by the caller, so precedence is unit-testable without I/O.
+    ///
+    /// Precedence: an explicit clear or color wins; otherwise a changed URL adopts the new
+    /// site's re-resolved manifest color (which may itself be nil → clear, so the color
+    /// follows the new site); otherwise the existing color is carried over.
+    static func resolveUpdateBackground(explicit: String?, clear: Bool,
+                                        urlChanged: Bool, reResolved: String?) -> String?? {
+        if clear { return .some(nil) }
+        if let explicit { return .some(explicit) }
+        if urlChanged { return .some(reResolved) }
+        return nil
     }
 
     /// `--open-any-url` only means anything when URL handling is on, so off-domain access is
