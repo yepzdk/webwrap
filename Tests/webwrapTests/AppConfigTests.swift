@@ -21,11 +21,12 @@ final class AppConfigParseTests: XCTestCase {
             "WebWrapBackgroundColor": "#1a73e8",
             "WebWrapHandleURLs": "1",
             "WebWrapOpenAnyURL": "1",
+            "WebWrapProgressBar": "1",
         ])
         XCTAssertEqual(AppConfig.parse(plistData: data),
                        AppConfig(url: "https://outlook.office.com", name: "Outlook",
                                  bundleId: "dk.yepz.webwrap.outlook", width: 1000, height: 700,
-                                 showToolbar: true, backgroundColor: "#1a73e8",
+                                 showToolbar: true, progressBar: true, backgroundColor: "#1a73e8",
                                  handleURLs: true, openAnyURL: true))
     }
 
@@ -77,7 +78,7 @@ final class AppConfigParseTests: XCTestCase {
 final class AppConfigApplyTests: XCTestCase {
     private let base = AppConfig(url: "https://old.test", name: "Old",
                                  bundleId: "dk.yepz.webwrap.old", width: 1200, height: 800,
-                                 showToolbar: false, backgroundColor: "#123456",
+                                 showToolbar: false, progressBar: false, backgroundColor: "#123456",
                                  handleURLs: false, openAnyURL: false)
 
     func testNoOverridesCarriesEverything() {
@@ -110,6 +111,17 @@ final class AppConfigApplyTests: XCTestCase {
         // A nil override (flag omitted on `update`) keeps the existing setting.
         let on = base.applying(showToolbar: true)
         XCTAssertTrue(on.applying(url: "https://new.test").showToolbar)
+    }
+
+    func testProgressBarOverrideToggles() {
+        XCTAssertTrue(base.applying(progressBar: true).progressBar)
+        let on = base.applying(progressBar: true)
+        XCTAssertFalse(on.applying(progressBar: false).progressBar)
+    }
+
+    func testProgressBarCarriedOverWhenNil() {
+        let on = base.applying(progressBar: true)
+        XCTAssertTrue(on.applying(url: "https://new.test").progressBar)
     }
 
     func testBackgroundColorCarriedOverByDefault() {

@@ -8,6 +8,7 @@ struct OptionSeed: Equatable {
     var width: Int
     var height: Int
     var toolbar: Bool
+    var progressBar: Bool
     var handleURLs: Bool
     var openAnyURL: Bool
     /// Explicit icon path, or nil meaning "resolve from site" (create) / "keep existing" (update).
@@ -36,13 +37,13 @@ enum CommandMode: Equatable {
 enum OptionDefaults {
     /// Seed for interactive `create`, coalescing the flags to their effective defaults. The
     /// background seed comes from the manifest when the site provided one.
-    static func forCreate(width: Int, height: Int, toolbar: Bool,
+    static func forCreate(width: Int, height: Int, toolbar: Bool, progressBar: Bool,
                           handleURLs: Bool, openAnyURL: Bool,
                           iconPath: String?, manifestBackground: String?,
                           noSign: Bool, signIdentity: String?,
                           notarize: Bool, notaryProfile: String?) -> OptionSeed {
         OptionSeed(
-            width: width, height: height, toolbar: toolbar,
+            width: width, height: height, toolbar: toolbar, progressBar: progressBar,
             handleURLs: handleURLs, openAnyURL: openAnyURL,
             iconPath: iconPath, backgroundColor: manifestBackground,
             noSign: noSign, signIdentity: signIdentity,
@@ -55,6 +56,7 @@ enum OptionDefaults {
     static func forUpdate(existing: AppConfig) -> OptionSeed {
         OptionSeed(
             width: existing.width, height: existing.height, toolbar: existing.showToolbar,
+            progressBar: existing.progressBar,
             handleURLs: existing.handleURLs, openAnyURL: existing.openAnyURL,
             iconPath: nil, backgroundColor: existing.backgroundColor,
             noSign: false, signIdentity: nil, notarize: false, notaryProfile: nil)
@@ -89,12 +91,12 @@ enum PromptContext {
 }
 
 /// Total steps in the full interactive flow, used for the `[Step n/total]` indicator.
-/// URL (1) and Name (2) are prompted by the caller; `promptForOptions` covers 3–8.
+/// URL (1) and Name (2) are prompted by the caller; `promptForOptions` covers 3–9.
 /// Conditional follow-ups (off-domain, notarize) nest under their parent step rather than
 /// taking their own number, so the denominator is stable.
-let interactiveStepCount = 8
+let interactiveStepCount = 9
 
-/// Walks the option prompts (steps 3–8) in order, each seeded from `seed`, with a step
+/// Walks the option prompts (steps 3–9) in order, each seeded from `seed`, with a step
 /// header + help text, and returns the filled-in values. Returns nil if the user cancels
 /// (types q / Ctrl-D) at any step. Reads real stdin via `Prompt`, so — like `Prompt`
 /// itself — it carries no business logic worth unit-testing; the seed/implication logic it
@@ -122,8 +124,15 @@ func promptForOptions(seed: OptionSeed, context: PromptContext) -> OptionSeed? {
         "Show navigation toolbar?", defaultYes: seed.toolbar) else { return nil }
     result.toolbar = toolbar
 
-    // Step 5 — URL handling, and the conditional off-domain follow-up.
-    Prompt.step(5, of: total, title: "URL handling",
+    // Step 5 — progress line.
+    Prompt.step(5, of: total, title: "Progress line",
+                help: "A thin accent line at the top edge that tracks page loads\nand fades out when done.")
+    guard let progressBar = Prompt.confirmOrCancel(
+        "Show page-load progress line?", defaultYes: seed.progressBar) else { return nil }
+    result.progressBar = progressBar
+
+    // Step 6 — URL handling, and the conditional off-domain follow-up.
+    Prompt.step(6, of: total, title: "URL handling",
                 help: "Register the app as an http/https handler so links opened\nfrom other apps (e.g. Choosy) load in it. Off by default.")
     guard let handleURLs = Prompt.confirmOrCancel(
         "Open URLs the app is launched with?", defaultYes: seed.handleURLs) else { return nil }
@@ -137,8 +146,8 @@ func promptForOptions(seed: OptionSeed, context: PromptContext) -> OptionSeed? {
         result.openAnyURL = false
     }
 
-    // Step 6 — background color.
-    Prompt.step(6, of: total, title: "Background color",
+    // Step 7 — background color.
+    Prompt.step(7, of: total, title: "Background color",
                 help: "A hex color (e.g. #1a73e8) painted behind the page to avoid\na white flash on launch. Blank for none.")
     let bgDefaultDisplay = seed.backgroundColor ?? "none"
     guard let background = Prompt.askWithDefault(
@@ -146,9 +155,9 @@ func promptForOptions(seed: OptionSeed, context: PromptContext) -> OptionSeed? {
         validate: colorValidator) else { return nil }
     result.backgroundColor = background
 
-    // Step 7 — icon.
+    // Step 8 — icon.
     let iconBlankMeans = context == .create ? "resolve from the site" : "keep the existing icon"
-    Prompt.step(7, of: total, title: "Icon",
+    Prompt.step(8, of: total, title: "Icon",
                 help: "Path to a .png or .icns file. Blank to \(iconBlankMeans).")
     let iconDefaultDisplay = seed.iconPath ?? (context == .create ? "resolve from site" : "keep existing")
     guard let iconPath = Prompt.askWithDefault(
@@ -156,8 +165,8 @@ func promptForOptions(seed: OptionSeed, context: PromptContext) -> OptionSeed? {
         validate: iconValidator) else { return nil }
     result.iconPath = iconPath
 
-    // Step 8 — signing.
-    Prompt.step(8, of: total, title: "Signing",
+    // Step 9 — signing.
+    Prompt.step(9, of: total, title: "Signing",
                 help: "Ad-hoc signing works for local use. Developer ID + notarization\nis for distributing the app to others.")
     guard let signing = promptForSigning(seed: seed) else { return nil }
     result.noSign = signing.noSign

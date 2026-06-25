@@ -20,6 +20,14 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     private weak var backButton: NSButton?
     private weak var forwardButton: NSButton?
 
+    /// The thin page-load progress line pinned to the top of the content view, and the KVO
+    /// observation driving it. Both nil when the progress bar isn't enabled.
+    private var progressBar: NSView?
+    private var progressObserver: NSKeyValueObservation?
+    /// The progress line's leading/trailing/top/height constraints aren't needed after
+    /// layout; only the width is animated, so we track it directly.
+    private weak var progressWidth: NSLayoutConstraint?
+
     /// The site URL the app is meant to show, kept so the offline fallback's Retry can
     /// reload it (the web view's own `url` is the about:blank/data page while the error
     /// screen is up).
@@ -149,6 +157,12 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         // chromeless look; on shows back/forward/reload in the window's title bar.
         if info("WebWrapToolbar") == "1" {
             installToolbar()
+        }
+
+        // Optional page-load progress line (opt-in via WebWrapProgressBar): a thin accent
+        // hairline along the top edge that tracks estimatedProgress and fades out on finish.
+        if info("WebWrapProgressBar") == "1" {
+            installProgressBar()
         }
 
         if let url = URL(string: urlString) {
@@ -385,6 +399,88 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         true
     }
 
+    // MARK: - Progress bar
+
+    /// Height of the progress line in points. A literal 1px reads as nothing on Retina, so
+    /// a thin hairline that still registers as "loading".
+    private static let progressBarHeight: CGFloat = 2.5
+
+    /// Adds the thin top-edge progress line and wires it to the web view's load progress.
+    /// The line sits above the web view, pinned to the top/leading of the content view, and
+    /// its width animates with `estimatedProgress`; it fills and fades out on completion.
+    private func installProgressBar() {
+        guard let container = window.contentView else { return }
+        let bar = NSView()
+        bar.translatesAutoresizingMaskIntoConstraints = false
+        bar.wantsLayer = true
+        bar.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
+        bar.alphaValue = 0 // hidden until a load starts
+        container.addSubview(bar, positioned: .above, relativeTo: webView)
+
+        // Start at zero width; updateProgress recreates this as a fraction of the container.
+        let width = bar.widthAnchor.constraint(equalToConstant: 0)
+        NSLayoutConstraint.activate([
+            bar.topAnchor.constraint(equalTo: container.topAnchor),
+            bar.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            bar.heightAnchor.constraint(equalToConstant: Self.progressBarHeight),
+            width,
+        ])
+        progressBar = bar
+        progressWidth = width
+
+        // Keep the accent color current if the user changes their Appearance/accent.
+        bar.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
+
+        progressObserver = webView.observe(\.estimatedProgress, options: [.new]) { [weak self] webView, _ in
+            self?.updateProgress(webView.estimatedProgress)
+        }
+    }
+
+    /// Drives the line from the raw `estimatedProgress` (0...1): shows a visible sliver as
+    /// soon as a load starts, grows toward the real value, then on completion fills and
+    /// fades out. The width math is in the pure `LoadProgress` helper.
+    private func updateProgress(_ estimated: Double) {
+        guard let bar = progressBar else { return }
+
+        switch LoadProgress.state(for: estimated) {
+        case .hidden:
+            bar.alphaValue = 0
+            setProgressFraction(0, animated: false)
+        case .loading(let fraction):
+            if bar.alphaValue == 0 { bar.alphaValue = 1 }
+            setProgressFraction(fraction, animated: true)
+        case .finished:
+            setProgressFraction(1, animated: true)
+            // Fill, then fade the completed bar out and reset its width for the next load.
+            NSAnimationContext.runAnimationGroup({ ctx in
+                ctx.duration = 0.25
+                bar.animator().alphaValue = 0
+            }, completionHandler: { [weak self] in
+                self?.setProgressFraction(0, animated: false)
+            })
+        }
+    }
+
+    /// Sets the line's width to `fraction` of the container width by swapping the width
+    /// constraint (a multiplier of the container), optionally animated.
+    private func setProgressFraction(_ fraction: Double, animated: Bool) {
+        guard let bar = progressBar, let container = window.contentView else { return }
+        let clamped = max(0, min(1, fraction))
+        let newWidth = bar.widthAnchor.constraint(
+            equalTo: container.widthAnchor, multiplier: CGFloat(clamped == 0 ? 0.0001 : clamped))
+        progressWidth?.isActive = false
+        newWidth.isActive = true
+        progressWidth = newWidth
+        if animated {
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.2
+                container.layoutSubtreeIfNeeded()
+            }
+        } else {
+            container.layoutSubtreeIfNeeded()
+        }
+    }
+
     // MARK: - Incoming URLs (open the app with a URL)
 
     // Modern AppKit URL-open entry point (e.g. `open -a "GitHub" <url>`, Choosy).
@@ -495,6 +591,33 @@ func runHost() {
     // Retain the delegate for the lifetime of the process.
     _ = Unmanaged.passRetained(delegate)
     app.run()
+}
+
+/// Pure mapping from a web view's `estimatedProgress` (0...1) to what the top-edge progress
+/// line should show. Kept free of AppKit so the floor/threshold logic is unit-testable; the
+/// view animation itself lives in `HostDelegate`.
+enum LoadProgress: Equatable {
+    /// No load in progress — the line is hidden.
+    case hidden
+    /// A load is underway; show the line at this fraction (0...1) of the window width.
+    case loading(fraction: Double)
+    /// The load just completed — fill to full, then fade out.
+    case finished
+
+    /// The smallest visible fraction, so a freshly-started load shows a sliver immediately
+    /// rather than a zero-width (invisible) bar that only appears once progress climbs.
+    static let minimumVisibleFraction = 0.08
+    /// At/above this, treat the load as finished (WebKit reports 1.0 on completion).
+    static let completeThreshold = 1.0
+
+    static func state(for estimatedProgress: Double) -> LoadProgress {
+        // WebKit reports 0 when idle / at the very start of a navigation.
+        if estimatedProgress <= 0 { return .hidden }
+        if estimatedProgress >= completeThreshold { return .finished }
+        // Floor the displayed fraction so early progress is visible, but never exceed the
+        // real value's headroom — clamp into [floor, 1).
+        return .loading(fraction: max(minimumVisibleFraction, min(estimatedProgress, 1)))
+    }
 }
 
 /// Pure text for the generated app's About panel. Kept free of AppKit so it's
