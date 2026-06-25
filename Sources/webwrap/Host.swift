@@ -27,6 +27,9 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     /// The progress line's leading/trailing/top/height constraints aren't needed after
     /// layout; only the width is animated, so we track it directly.
     private weak var progressWidth: NSLayoutConstraint?
+    /// Last width fraction applied, so the per-callback update can skip rebuilding the
+    /// width constraint when `estimatedProgress` hasn't moved the displayed value.
+    private var progressFraction: Double = 0
 
     /// The site URL the app is meant to show, kept so the offline fallback's Retry can
     /// reload it (the web view's own `url` is the about:blank/data page while the error
@@ -428,9 +431,6 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         progressBar = bar
         progressWidth = width
 
-        // Keep the accent color current if the user changes their Appearance/accent.
-        bar.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
-
         progressObserver = webView.observe(\.estimatedProgress, options: [.new]) { [weak self] webView, _ in
             self?.updateProgress(webView.estimatedProgress)
         }
@@ -462,10 +462,14 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     }
 
     /// Sets the line's width to `fraction` of the container width by swapping the width
-    /// constraint (a multiplier of the container), optionally animated.
+    /// constraint (a multiplier of the container), optionally animated. A no-op when the
+    /// displayed fraction is unchanged, so the frequent `estimatedProgress` callbacks don't
+    /// churn a fresh constraint each time.
     private func setProgressFraction(_ fraction: Double, animated: Bool) {
         guard let bar = progressBar, let container = window.contentView else { return }
         let clamped = max(0, min(1, fraction))
+        guard clamped != progressFraction else { return }
+        progressFraction = clamped
         let newWidth = bar.widthAnchor.constraint(
             equalTo: container.widthAnchor, multiplier: CGFloat(clamped == 0 ? 0.0001 : clamped))
         progressWidth?.isActive = false
