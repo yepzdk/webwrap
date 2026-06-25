@@ -26,10 +26,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `--handle-urls` lets an app open URLs it's launched with (e.g. routed from Choosy),
   registering as an http/https handler. Off by default; only same-site URLs are
   accepted unless `--open-any-url` is set. Available on `create` and `update`.
+- Interactive `create` and `update` now prompt for **all** options (window size, toolbar,
+  URL handling, background, icon, signing), each shown as a numbered `[Step n/8]` with a
+  short help line and pre-filled from any flags you pass or, on update, from the app's
+  current settings. Type `q` to cancel at any step. Scripts are unaffected: piped input
+  never prompts and `create --url … --name …` stays non-interactive.
 
 ### Changed
 - The View menu's **Back** and **Forward** items now disable when there's no history
   to go to, matching the navigation toolbar buttons.
+- `webwrap update <app>` with no option flags on a terminal now opens the interactive
+  editor (previously it silently refreshed the engine); pass a flag or `--force` for the
+  direct path.
 
 ## [0.3.0] - 2026-06-24
 
