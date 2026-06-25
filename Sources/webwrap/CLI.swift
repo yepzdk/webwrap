@@ -172,8 +172,10 @@ struct Update: ParsableCommand {
 
             // Background precedence: an explicit flag wins; otherwise a changed URL adopts
             // the new site's manifest color (re-resolved here); otherwise it's carried over.
+            // Only re-resolve when no flag overrides it — otherwise the fetch is discarded.
             let urlChanged = url != nil && url != existing.url
-            let reResolved = urlChanged ? Self.resolveManifestBackground(forURL: url!) : nil
+            let needsReResolve = urlChanged && backgroundColor == nil && !noBackgroundColor
+            let reResolved = needsReResolve ? Self.resolveManifestBackground(forURL: url!) : nil
             let background = OptionDefaults.resolveUpdateBackground(
                 explicit: backgroundColor, clear: noBackgroundColor,
                 urlChanged: urlChanged, reResolved: reResolved)
