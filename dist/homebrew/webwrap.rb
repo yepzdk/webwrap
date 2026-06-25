@@ -5,7 +5,7 @@ class Webwrap < Formula
   url "https://github.com/yepzdk/webwrap/releases/download/v0.4.0/webwrap-0.4.0-macos-universal.tar.gz"
   version "0.4.0"
   # From the release: webwrap-0.4.0-macos-universal.tar.gz.sha256
-  sha256 "eecb64eb8e42389a81d7497a4f10a71442296f57c768d5e34260c85784f55904"
+  sha256 "048d5e57616a5ba8ec6e09356a4d9ace604cfcdc55c8d389f618845263c6fbc7"
   license "MIT"
 
   depends_on :macos
