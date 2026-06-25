@@ -57,21 +57,26 @@ $ webwrap create
 webwrap — create a macOS app from a website
 Press Enter to accept the [default]. Type q to cancel.
 
-[Step 1/8] Website URL
+[Step 1/9] Website URL
   The address the app opens, e.g. https://github.com.
 URL: https://outlook.office.com
 Resolving icon…
 
-[Step 2/8] App name
+[Step 2/9] App name
   The display name and the .app filename.
 Name [Outlook]:
 
-[Step 4/8] Toolbar
+[Step 4/9] Toolbar
   A back/forward/reload bar in the title area.
   Off keeps the chromeless look.
 Show navigation toolbar? [y/N]:
 
-… (steps 3, 5–8: window size, URL handling, background, icon, signing) …
+[Step 5/9] Progress line
+  A thin accent line at the top edge that tracks page loads
+  and fades out when done.
+Show page-load progress line? [y/N]:
+
+… (steps 3, 6–9: window size, URL handling, background, icon, signing) …
 
 Summary
   Name:        Outlook
@@ -80,6 +85,7 @@ Summary
   Icon:        web app manifest
   Size:        1200×800
   Toolbar:     no
+  Progress:    no
   Handle URLs: no
   Background:  default
   Signing:     ad-hoc
@@ -89,8 +95,6 @@ Create this app? [Y/n]:
 ```
 
 Passing both `--url` and `--name` skips the prompts entirely and builds straight from the flags — handy for scripts. Piped/non-interactive input never prompts.
-
-It validates the URL (re-prompting if it's not absolute), suggests a name from the site's host, shows where the icon came from, and asks you to confirm before writing anything. Piped or non-interactive input never prompts — pass `--url` and `--name` as flags there.
 
 ### Options
 
@@ -104,6 +108,7 @@ It validates the URL (re-prompting if it's not absolute), suggests a name from t
 | `--width` | Initial window width (points) | `1200` |
 | `--height` | Initial window height (points) | `800` |
 | `--toolbar` | Show a navigation toolbar (back/forward/reload) | off |
+| `--progress-bar` | Show a thin page-load progress line at the top of the window | off |
 | `--handle-urls` | Register as an http/https handler and open URLs the app is launched with (e.g. from Choosy) | off |
 | `--open-any-url` | With `--handle-urls`, also accept off-domain URLs (default: only same-site) | off |
 | `--force` | Overwrite an existing `.app` | off |
@@ -169,6 +174,7 @@ Run with just the app path on a terminal and `update` walks the same prompts as 
 | `--icon` | New `.png`/`.icns` icon (existing icon kept if omitted) |
 | `--width`, `--height` | New window size |
 | `--toolbar` / `--no-toolbar` | Show or hide the navigation toolbar (current setting kept if omitted) |
+| `--progress-bar` / `--no-progress-bar` | Show or hide the page-load progress line (current setting kept if omitted) |
 | `--handle-urls` / `--no-handle-urls` | Turn URL handling on or off (current setting kept if omitted) |
 | `--open-any-url` / `--no-open-any-url` | Allow or restrict off-domain URLs (current setting kept if omitted) |
 | `--sign`, `--notarize`, `--notary-profile`, `--no-sign` | Signing, same as `create` |

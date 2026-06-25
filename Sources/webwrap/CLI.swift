@@ -57,6 +57,10 @@ struct Update: ParsableCommand {
     var toolbar: Bool?
 
     @Flag(name: .long, inversion: .prefixedNo,
+          help: "Show or hide the page-load progress line. If omitted, the current setting is kept.")
+    var progressBar: Bool?
+
+    @Flag(name: .long, inversion: .prefixedNo,
           help: "Register as an http/https handler and open URLs the app is launched with. If omitted, the current setting is kept.")
     var handleUrls: Bool?
 
@@ -99,8 +103,8 @@ struct Update: ParsableCommand {
         // options interactively, seeded from the app's current settings; any option flag
         // (or --force) keeps the existing flag-driven path.
         let anyOptionFlag = url != nil || name != nil || icon != nil || width != nil
-            || height != nil || toolbar != nil || handleUrls != nil || openAnyUrl != nil
-            || sign != nil || noSign || notarize
+            || height != nil || toolbar != nil || progressBar != nil || handleUrls != nil
+            || openAnyUrl != nil || sign != nil || noSign || notarize
         let mode = OptionDefaults.updateMode(isInteractive: Prompt.isInteractive,
                                              anyOptionFlag: anyOptionFlag, force: force)
 
@@ -134,7 +138,7 @@ struct Update: ParsableCommand {
             }
             merged = existing.applying(
                 url: resolvedURL, name: resolvedName, width: seed.width, height: seed.height,
-                showToolbar: seed.toolbar,
+                showToolbar: seed.toolbar, progressBar: seed.progressBar,
                 backgroundColor: .some(seed.backgroundColor),
                 handleURLs: seed.handleURLs,
                 openAnyURL: OptionDefaults.resolveOpenAnyURL(handleURLs: seed.handleURLs,
@@ -150,7 +154,7 @@ struct Update: ParsableCommand {
             // enabling open-any-url, never overriding an explicit --no-handle-urls intent.
             let effectiveHandleURLs = (openAnyUrl == true && handleUrls == nil) ? true : handleUrls
             merged = existing.applying(url: url, name: name, width: width, height: height,
-                                       showToolbar: toolbar,
+                                       showToolbar: toolbar, progressBar: progressBar,
                                        handleURLs: effectiveHandleURLs, openAnyURL: openAnyUrl)
         }
 
@@ -169,6 +173,9 @@ struct Update: ParsableCommand {
         }
         if merged.showToolbar != existing.showToolbar {
             changes.append("Toolbar → \(merged.showToolbar ? "shown" : "hidden")")
+        }
+        if merged.progressBar != existing.progressBar {
+            changes.append("Progress line → \(merged.progressBar ? "shown" : "hidden")")
         }
         if merged.handleURLs != existing.handleURLs {
             changes.append("Handle URLs → \(merged.handleURLs ? "on" : "off")")
@@ -221,6 +228,7 @@ struct Update: ParsableCommand {
             width: merged.width,
             height: merged.height,
             showToolbar: merged.showToolbar,
+            progressBar: merged.progressBar,
             force: true,
             sign: !buildNoSign,
             signIdentity: buildSign,
@@ -274,6 +282,10 @@ struct Create: ParsableCommand {
     @Flag(name: .long, inversion: .prefixedNo,
           help: "Show a navigation toolbar (back/forward/reload) in the window. Off by default.")
     var toolbar: Bool = false
+
+    @Flag(name: .long, inversion: .prefixedNo,
+          help: "Show a thin page-load progress line at the top of the window. Off by default.")
+    var progressBar: Bool = false
 
     @Flag(name: .long, help: "Register as an http/https handler and open URLs the app is launched with (e.g. from Choosy). Off by default.")
     var handleUrls: Bool = false
@@ -340,7 +352,7 @@ struct Create: ParsableCommand {
     private func seedFromFlags(manifest: IconResolver.SiteMetadata) -> OptionSeed {
         // `--open-any-url` implies `--handle-urls`, so the seed's handleURLs reflects that.
         OptionDefaults.forCreate(
-            width: width, height: height, toolbar: toolbar,
+            width: width, height: height, toolbar: toolbar, progressBar: progressBar,
             handleURLs: effectiveHandleURLs, openAnyURL: openAnyUrl,
             iconPath: icon, manifestBackground: manifest.launchBackgroundColor,
             noSign: noSign, signIdentity: sign, notarize: notarize, notaryProfile: notaryProfile)
@@ -411,6 +423,7 @@ struct Create: ParsableCommand {
           Icon:        \(iconSummary(seed: seed, resolvedIcon: resolvedIcon))
           Size:        \(seed.width)×\(seed.height)
           Toolbar:     \(seed.toolbar ? "yes" : "no")
+          Progress:    \(seed.progressBar ? "yes" : "no")
           Handle URLs: \(handleURLsSummary(seed: seed))
           Background:  \(seed.backgroundColor ?? "default")
           Signing:     \(Self.signingDescription(noSign: seed.noSign, sign: seed.signIdentity, notarize: seed.notarize))
@@ -460,6 +473,7 @@ struct Create: ParsableCommand {
             width: seed.width,
             height: seed.height,
             showToolbar: seed.toolbar,
+            progressBar: seed.progressBar,
             force: force,
             sign: !seed.noSign,
             signIdentity: seed.signIdentity,

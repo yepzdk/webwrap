@@ -8,12 +8,12 @@ import XCTest
 final class OptionDefaultsForCreateTests: XCTestCase {
     func testCoalescesFlagsAndTakesManifestBackground() {
         let seed = OptionDefaults.forCreate(
-            width: 1200, height: 800, toolbar: false,
+            width: 1200, height: 800, toolbar: false, progressBar: false,
             handleURLs: false, openAnyURL: false,
             iconPath: nil, manifestBackground: "#1a73e8",
             noSign: false, signIdentity: nil, notarize: false, notaryProfile: nil)
         XCTAssertEqual(seed, OptionSeed(
-            width: 1200, height: 800, toolbar: false,
+            width: 1200, height: 800, toolbar: false, progressBar: false,
             handleURLs: false, openAnyURL: false,
             iconPath: nil, backgroundColor: "#1a73e8",
             noSign: false, signIdentity: nil, notarize: false, notaryProfile: nil))
@@ -21,13 +21,14 @@ final class OptionDefaultsForCreateTests: XCTestCase {
 
     func testCarriesExplicitFlagValues() {
         let seed = OptionDefaults.forCreate(
-            width: 1000, height: 700, toolbar: true,
+            width: 1000, height: 700, toolbar: true, progressBar: true,
             handleURLs: true, openAnyURL: true,
             iconPath: "/tmp/x.png", manifestBackground: nil,
             noSign: true, signIdentity: "Developer ID Application: X", notarize: false, notaryProfile: nil)
         XCTAssertEqual(seed.width, 1000)
         XCTAssertEqual(seed.height, 700)
         XCTAssertTrue(seed.toolbar)
+        XCTAssertTrue(seed.progressBar)
         XCTAssertTrue(seed.handleURLs)
         XCTAssertTrue(seed.openAnyURL)
         XCTAssertEqual(seed.iconPath, "/tmp/x.png")
@@ -40,7 +41,7 @@ final class OptionDefaultsForCreateTests: XCTestCase {
 final class OptionDefaultsForUpdateTests: XCTestCase {
     private let existing = AppConfig(
         url: "https://github.com", name: "GitHub", bundleId: "dk.yepz.webwrap.github",
-        width: 1400, height: 900, showToolbar: true, backgroundColor: "#0d1117",
+        width: 1400, height: 900, showToolbar: true, progressBar: true, backgroundColor: "#0d1117",
         handleURLs: true, openAnyURL: false)
 
     func testMapsPersistedConfigToSeed() {
@@ -48,6 +49,7 @@ final class OptionDefaultsForUpdateTests: XCTestCase {
         XCTAssertEqual(seed.width, 1400)
         XCTAssertEqual(seed.height, 900)
         XCTAssertTrue(seed.toolbar)
+        XCTAssertTrue(seed.progressBar)
         XCTAssertEqual(seed.backgroundColor, "#0d1117")
         XCTAssertTrue(seed.handleURLs)
         XCTAssertFalse(seed.openAnyURL)

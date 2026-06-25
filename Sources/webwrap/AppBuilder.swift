@@ -10,6 +10,9 @@ struct AppBuilder {
     let height: Int
     /// Whether the generated app shows a navigation toolbar (back/forward/reload).
     let showToolbar: Bool
+    /// Whether the generated app shows a thin page-load progress line at the top of the
+    /// window. Off by default. (`--progress-bar`.)
+    var progressBar: Bool = false
     let force: Bool
     /// Whether to sign at all. When false (`--no-sign`), the bundle is left unsigned.
     let sign: Bool
@@ -127,6 +130,7 @@ struct AppBuilder {
             width: width,
             height: height,
             showToolbar: showToolbar,
+            progressBar: progressBar,
             backgroundColor: backgroundColor,
             handleURLs: handleURLs,
             openAnyURL: openAnyURL,
@@ -145,6 +149,7 @@ struct AppBuilder {
                               width: Int,
                               height: Int,
                               showToolbar: Bool,
+                              progressBar: Bool = false,
                               backgroundColor: String? = nil,
                               handleURLs: Bool = false,
                               openAnyURL: Bool = false,
@@ -227,6 +232,8 @@ struct AppBuilder {
             <string>\(height)</string>
             <key>WebWrapToolbar</key>
             <string>\(showToolbar ? "1" : "0")</string>
+            <key>WebWrapProgressBar</key>
+            <string>\(progressBar ? "1" : "0")</string>
             <key>WebWrapHandleURLs</key>
             <string>\(handleURLs ? "1" : "0")</string>
             <key>WebWrapOpenAnyURL</key>
