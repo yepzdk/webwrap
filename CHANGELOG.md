@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-06-25
+
 ### Added
 - `create --background-color <hex>` overrides the window background color derived from
   the site manifest.
