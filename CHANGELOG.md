@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- `create --background-color <hex>` overrides the window background color derived from
+  the site manifest.
+
+### Changed
+- `update` can now change the window background color: `--background-color <hex>` sets it
+  and `--no-background-color` clears it. When `--url` changes and neither flag is given,
+  the color follows the new site's manifest (previously the old color was kept).
+
 ## [0.4.0] - 2026-06-25
 
 ### Added

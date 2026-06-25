@@ -10,7 +10,7 @@ final class OptionDefaultsForCreateTests: XCTestCase {
         let seed = OptionDefaults.forCreate(
             width: 1200, height: 800, toolbar: false, progressBar: false,
             handleURLs: false, openAnyURL: false,
-            iconPath: nil, manifestBackground: "#1a73e8",
+            iconPath: nil, manifestBackground: "#1a73e8", explicitBackground: nil,
             noSign: false, signIdentity: nil, notarize: false, notaryProfile: nil)
         XCTAssertEqual(seed, OptionSeed(
             width: 1200, height: 800, toolbar: false, progressBar: false,
@@ -19,11 +19,20 @@ final class OptionDefaultsForCreateTests: XCTestCase {
             noSign: false, signIdentity: nil, notarize: false, notaryProfile: nil))
     }
 
+    func testExplicitBackgroundOverridesManifest() {
+        let seed = OptionDefaults.forCreate(
+            width: 1200, height: 800, toolbar: false, progressBar: false,
+            handleURLs: false, openAnyURL: false,
+            iconPath: nil, manifestBackground: "#1a73e8", explicitBackground: "#ff0000",
+            noSign: false, signIdentity: nil, notarize: false, notaryProfile: nil)
+        XCTAssertEqual(seed.backgroundColor, "#ff0000")
+    }
+
     func testCarriesExplicitFlagValues() {
         let seed = OptionDefaults.forCreate(
             width: 1000, height: 700, toolbar: true, progressBar: true,
             handleURLs: true, openAnyURL: true,
-            iconPath: "/tmp/x.png", manifestBackground: nil,
+            iconPath: "/tmp/x.png", manifestBackground: nil, explicitBackground: nil,
             noSign: true, signIdentity: "Developer ID Application: X", notarize: false, notaryProfile: nil)
         XCTAssertEqual(seed.width, 1000)
         XCTAssertEqual(seed.height, 700)
@@ -63,6 +72,45 @@ final class OptionDefaultsForUpdateTests: XCTestCase {
         XCTAssertNil(seed.signIdentity)
         XCTAssertFalse(seed.notarize)
         XCTAssertNil(seed.notaryProfile)
+    }
+}
+
+final class ResolveUpdateBackgroundTests: XCTestCase {
+    // The result is a String??: nil = carry over, .some(nil) = clear, .some(x) = set.
+
+    func testClearWinsOverEverything() {
+        let r = OptionDefaults.resolveUpdateBackground(
+            explicit: "#ff0000", clear: true, urlChanged: true, reResolved: "#00ff00")
+        // .some(nil) — cleared, despite an explicit color and a re-resolved value.
+        guard case .some(let inner) = r else { return XCTFail("expected .some") }
+        XCTAssertNil(inner)
+    }
+
+    func testExplicitBeatsReResolved() {
+        let r = OptionDefaults.resolveUpdateBackground(
+            explicit: "#ff0000", clear: false, urlChanged: true, reResolved: "#00ff00")
+        XCTAssertEqual(r, .some("#ff0000"))
+    }
+
+    func testUrlChangedAdoptsReResolved() {
+        let r = OptionDefaults.resolveUpdateBackground(
+            explicit: nil, clear: false, urlChanged: true, reResolved: "#00ff00")
+        XCTAssertEqual(r, .some("#00ff00"))
+    }
+
+    func testUrlChangedToSiteWithoutColorClears() {
+        // The color follows the new site: no manifest color → .some(nil) (clear).
+        let r = OptionDefaults.resolveUpdateBackground(
+            explicit: nil, clear: false, urlChanged: true, reResolved: nil)
+        guard case .some(let inner) = r else { return XCTFail("expected .some") }
+        XCTAssertNil(inner)
+    }
+
+    func testNoChangeCarriesOver() {
+        let r = OptionDefaults.resolveUpdateBackground(
+            explicit: nil, clear: false, urlChanged: false, reResolved: nil)
+        // nil — carry over the existing color.
+        XCTAssertEqual(r, .none)
     }
 }
 

@@ -54,3 +54,16 @@ final class SuggestNameTests: XCTestCase {
         XCTAssertNil(Create.suggestName(fromURL: "not a url"))
     }
 }
+
+final class BackgroundColorValidationTests: XCTestCase {
+    func testAcceptsHexColors() throws {
+        XCTAssertNoThrow(try Create.validate(backgroundColor: "#1a73e8"))
+        XCTAssertNoThrow(try Create.validate(backgroundColor: "#fff"))
+    }
+
+    func testRejectsJunk() {
+        XCTAssertThrowsError(try Create.validate(backgroundColor: "not-a-color")) { error in
+            XCTAssertTrue("\(error)".contains("hex color"))
+        }
+    }
+}

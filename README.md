@@ -111,6 +111,7 @@ Passing both `--url` and `--name` skips the prompts entirely and builds straight
 | `--progress-bar` | Show a thin page-load progress line at the top of the window | off |
 | `--handle-urls` | Register as an http/https handler and open URLs the app is launched with (e.g. from Choosy) | off |
 | `--open-any-url` | With `--handle-urls`, also accept off-domain URLs (default: only same-site) | off |
+| `--background-color` | Hex color painted behind the page on launch (e.g. `#1a73e8`); overrides the site manifest's color | manifest |
 | `--force` | Overwrite an existing `.app` | off |
 | `--no-sign` | Skip ad-hoc code signing | off |
 | `--sign` | Sign with a Developer ID identity (enables the hardened runtime) | ad-hoc |
@@ -177,6 +178,7 @@ Run with just the app path on a terminal and `update` walks the same prompts as 
 | `--progress-bar` / `--no-progress-bar` | Show or hide the page-load progress line (current setting kept if omitted) |
 | `--handle-urls` / `--no-handle-urls` | Turn URL handling on or off (current setting kept if omitted) |
 | `--open-any-url` / `--no-open-any-url` | Allow or restrict off-domain URLs (current setting kept if omitted) |
+| `--background-color` / `--no-background-color` | Set or clear the window background color. If omitted, it follows the new `--url`'s manifest color when the URL changes, otherwise the current setting is kept |
 | `--sign`, `--notarize`, `--notary-profile`, `--no-sign` | Signing, same as `create` |
 | `--force` | Skip the confirmation prompt |
 
