@@ -54,7 +54,7 @@ Distribution is via **prebuilt universal binary**, not build-from-source:
 
 1. Bump the version in `CLI.swift` (`CommandConfiguration.version`), the `version` line in `dist/homebrew/webwrap.rb`, and the URL/filename in the formula. Move `[Unreleased]` changelog entries under a new version heading.
 2. Commit, then tag `vX.Y.Z` and push the tag. The `.github/workflows/release.yml` workflow builds a universal (arm64 + x86_64) binary on a `macos-14` runner, tarballs it as `webwrap-X.Y.Z-macos-universal.tar.gz`, and attaches it (plus a `.sha256`) to the GitHub release.
-3. Copy the published `sha256` into `dist/homebrew/webwrap.rb` and commit the formula to the `yepzdk/homebrew-tools` tap.
+3. The same workflow's `update-tap` job then bumps `Formula/webwrap.rb` in the `yepzdk/homebrew-tools` tap to the new release (recomputing the sha from the published asset) and pushes it — so `brew upgrade webwrap` picks it up with no manual step. The in-repo `dist/homebrew/webwrap.rb` is the canonical copy kept in sync by hand in step 1; the tap copy is what users install from. Requires a `HOMEBREW_TAP_TOKEN` repo secret (a PAT with contents-write on the tap; the default `GITHUB_TOKEN` can't push cross-repo).
 
 The release binary is built universal so a single bottle serves both Apple Silicon and Intel. The deployment target is macOS 13, but the runner is macOS 14 (newer SDK, lower target is fine).
 

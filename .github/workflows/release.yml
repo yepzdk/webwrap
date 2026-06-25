@@ -49,3 +49,53 @@ jobs:
             webwrap-*.tar.gz
             webwrap-*.tar.gz.sha256
           generate_release_notes: true
+
+  # Bump the Homebrew formula in the yepzdk/homebrew-tools tap to point at the
+  # release this tag just built, so `brew upgrade webwrap` picks it up without a
+  # manual formula edit. Requires a HOMEBREW_TAP_TOKEN secret: a PAT with contents
+  # write on the tap repo (the default GITHUB_TOKEN can't push cross-repo).
+  update-tap:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the tap
+        uses: actions/checkout@v5
+        with:
+          repository: yepzdk/homebrew-tools
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Bump the webwrap formula
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          TARBALL="webwrap-${VERSION}-macos-universal.tar.gz"
+          URL="https://github.com/yepzdk/webwrap/releases/download/${GITHUB_REF_NAME}/${TARBALL}"
+
+          # Recompute the sha from the published asset rather than trusting an input,
+          # so the formula always matches what users actually download.
+          curl -fsSL "$URL" -o "$TARBALL"
+          SHA="$(shasum -a 256 "$TARBALL" | cut -d' ' -f1)"
+          rm -f "$TARBALL"
+
+          FORMULA="Formula/webwrap.rb"
+          sed -i -E \
+            -e "s|url \".*\"|url \"${URL}\"|" \
+            -e "s|version \".*\"|version \"${VERSION}\"|" \
+            -e "s|# From the release: .*|# From the release: ${TARBALL}.sha256|" \
+            -e "s|sha256 \".*\"|sha256 \"${SHA}\"|" \
+            -e "s|assert_match \"[0-9.]+\"|assert_match \"${VERSION}\"|" \
+            "$FORMULA"
+
+          echo "Updated formula:"
+          cat "$FORMULA"
+
+      - name: Commit and push
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet; then
+            echo "Formula already up to date; nothing to commit."
+            exit 0
+          fi
+          git commit -am "Update webwrap to ${VERSION}"
+          git push
