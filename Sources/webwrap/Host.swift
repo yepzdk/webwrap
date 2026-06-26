@@ -19,6 +19,9 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     // so enable/disable must target the NSButton directly.
     private weak var backButton: NSButton?
     private weak var forwardButton: NSButton?
+    /// The toolbar size in effect, read when (re)building toolbar items so the icon point
+    /// size and window toolbar style match. Set before `installToolbar()`.
+    private var currentToolbarStyle: ToolbarStyle = .default
 
     /// The thin page-load progress line pinned to the top of the content view, and the KVO
     /// observation driving it. Both nil when the progress bar isn't enabled.
@@ -60,6 +63,7 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     /// The baked-in plist defaults, captured at launch so "Restore Defaults" can fall
     /// back to them and the Settings window can resolve effective values.
     private var bakedToolbar = false
+    private var bakedToolbarStyle: ToolbarStyle = .default
     private var bakedProgressBar = false
     private var bakedBackgroundColor: String?
 
@@ -67,6 +71,8 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     private var settingsWindow: NSWindow?
     /// Controls inside the Settings window, kept so "Restore Defaults" can refresh them.
     private weak var toolbarCheckbox: NSButton?
+    private weak var toolbarSizeControl: NSSegmentedControl?
+    private weak var toolbarSizeLabel: NSTextField?
     private weak var progressCheckbox: NSButton?
     private weak var backgroundColorWell: NSColorWell?
     private weak var backgroundEnabledCheckbox: NSButton?
@@ -135,6 +141,7 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         // Capture the baked-in plist defaults, then resolve the effective values through
         // any in-app overrides. The plist value is the default; UserDefaults can override.
         bakedToolbar = info("WebWrapToolbar") == "1"
+        bakedToolbarStyle = ToolbarStyle.parse(info("WebWrapToolbarStyle"))
         bakedProgressBar = info("WebWrapProgressBar") == "1"
         bakedBackgroundColor = info("WebWrapBackgroundColor")
         backgroundColorRaw = HostSettings.backgroundColor(store: settingsStore,
@@ -173,6 +180,8 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
 
         // Optional navigation toolbar (opt-in via WebWrapToolbar, overridable in Settings).
         // Off keeps the chromeless look; on shows back/forward/reload in the title bar.
+        currentToolbarStyle = HostSettings.toolbarStyle(store: settingsStore,
+                                                        bakedDefault: bakedToolbarStyle)
         if HostSettings.toolbar(store: settingsStore, bakedDefault: bakedToolbar) {
             installToolbar()
         }
@@ -305,7 +314,8 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         toolbar.displayMode = .iconOnly
         window.toolbar = toolbar
         if #available(macOS 11.0, *) {
-            window.toolbarStyle = .unified
+            // Compact uses the shorter unifiedCompact bar; regular uses the taller unified.
+            window.toolbarStyle = currentToolbarStyle == .compact ? .unifiedCompact : .unified
         }
 
         // Refresh once the items exist (setting `window.toolbar` may not have built them
@@ -338,6 +348,18 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         if enabled { installToolbar() } else { removeToolbar() }
     }
 
+    /// Changes the toolbar size live. When the toolbar is currently shown, it's rebuilt so
+    /// the new window style and icon size take effect immediately; when hidden, the new
+    /// size is just remembered for the next time it's installed.
+    private func setToolbarStyle(_ style: ToolbarStyle) {
+        guard style != currentToolbarStyle else { return }
+        currentToolbarStyle = style
+        if window.toolbar != nil {
+            removeToolbar()
+            installToolbar()
+        }
+    }
+
     private func updateNavEnablement() {
         backButton?.isEnabled = webView.canGoBack
         forwardButton?.isEnabled = webView.canGoForward
@@ -356,8 +378,12 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         button.target = self
         button.action = spec.action
         if #available(macOS 11.0, *),
-           let image = NSImage(systemSymbolName: spec.symbol, accessibilityDescription: label) {
-            button.image = image
+           let base = NSImage(systemSymbolName: spec.symbol, accessibilityDescription: label) {
+            // Scale the glyph to the toolbar size: a smaller point size for compact so the
+            // shorter bar doesn't look cramped with full-size icons.
+            let pointSize: CGFloat = currentToolbarStyle == .compact ? 12 : 15
+            let config = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .regular)
+            button.image = base.withSymbolConfiguration(config) ?? base
             button.imagePosition = .imageOnly
         } else {
             button.title = spec.fallbackTitle
@@ -591,6 +617,17 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
 
         let toolbar = makeCheckbox(title: "Show navigation toolbar",
                                    action: #selector(settingsToolbarChanged(_:)))
+
+        // Toolbar size: a segmented Regular | Compact picker, labeled and indented under
+        // the toolbar checkbox. Enabled only while the toolbar is shown.
+        let sizeLabel = NSTextField(labelWithString: "Size")
+        sizeLabel.translatesAutoresizingMaskIntoConstraints = false
+        let sizeControl = NSSegmentedControl(
+            labels: ToolbarStyle.allCases.map { $0.rawValue.capitalized },
+            trackingMode: .selectOne, target: self,
+            action: #selector(settingsToolbarSizeChanged(_:)))
+        sizeControl.translatesAutoresizingMaskIntoConstraints = false
+
         let progress = makeCheckbox(title: "Show page-load progress bar",
                                     action: #selector(settingsProgressChanged(_:)))
         let bgEnabled = makeCheckbox(title: "Window background color",
@@ -607,9 +644,18 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         restore.bezelStyle = .rounded
 
         toolbarCheckbox = toolbar
+        toolbarSizeControl = sizeControl
+        toolbarSizeLabel = sizeLabel
         progressCheckbox = progress
         backgroundEnabledCheckbox = bgEnabled
         backgroundColorWell = colorWell
+
+        // Toolbar-size row: label + segmented picker, indented under the toolbar checkbox.
+        let sizeRow = NSStackView(views: [sizeLabel, sizeControl])
+        sizeRow.orientation = .horizontal
+        sizeRow.spacing = 8
+        sizeRow.alignment = .centerY
+        sizeRow.edgeInsets = NSEdgeInsets(top: 0, left: 18, bottom: 0, right: 0)
 
         // Background row: the enable checkbox and the color well side by side.
         let bgRow = NSStackView(views: [bgEnabled, colorWell])
@@ -617,14 +663,14 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         bgRow.spacing = 8
         bgRow.alignment = .centerY
 
-        let stack = NSStackView(views: [toolbar, progress, bgRow, restore])
+        let stack = NSStackView(views: [toolbar, sizeRow, progress, bgRow, restore])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 12
         stack.translatesAutoresizingMaskIntoConstraints = false
 
         let contentRect = NSRect(x: 0, y: 0, width: width,
-                                 height: padding * 2 + rowHeight * 4 + 12 * 3)
+                                 height: padding * 2 + rowHeight * 5 + 12 * 4)
         let window = NSWindow(contentRect: contentRect,
                               styleMask: [.titled, .closable],
                               backing: .buffered, defer: false)
@@ -653,10 +699,16 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     /// open and after Restore Defaults.
     private func syncSettingsControls() {
         let toolbarOn = HostSettings.toolbar(store: settingsStore, bakedDefault: bakedToolbar)
+        let style = HostSettings.toolbarStyle(store: settingsStore, bakedDefault: bakedToolbarStyle)
         let progressOn = HostSettings.progressBar(store: settingsStore, bakedDefault: bakedProgressBar)
         let bg = HostSettings.backgroundColor(store: settingsStore, bakedDefault: bakedBackgroundColor)
 
         toolbarCheckbox?.state = toolbarOn ? .on : .off
+        // Map the style to its segment index (the control's labels follow allCases order).
+        toolbarSizeControl?.selectedSegment = ToolbarStyle.allCases.firstIndex(of: style) ?? 0
+        // The size picker is inert when the toolbar is hidden.
+        toolbarSizeControl?.isEnabled = toolbarOn
+        toolbarSizeLabel?.textColor = toolbarOn ? .labelColor : .disabledControlTextColor
         progressCheckbox?.state = progressOn ? .on : .off
         backgroundEnabledCheckbox?.state = bg != nil ? .on : .off
         if let bg, let rgba = CSSColor.parse(bg) {
@@ -670,6 +722,17 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         let on = sender.state == .on
         HostSettings.setToolbar(on, store: settingsStore)
         setToolbarEnabled(on)
+        // The size picker only applies while the toolbar is shown.
+        toolbarSizeControl?.isEnabled = on
+        toolbarSizeLabel?.textColor = on ? .labelColor : .disabledControlTextColor
+    }
+
+    @objc private func settingsToolbarSizeChanged(_ sender: NSSegmentedControl) {
+        let all = ToolbarStyle.allCases
+        let index = sender.selectedSegment
+        let style = all.indices.contains(index) ? all[index] : .default
+        HostSettings.setToolbarStyle(style, store: settingsStore)
+        setToolbarStyle(style)
     }
 
     @objc private func settingsProgressChanged(_ sender: NSButton) {
@@ -697,6 +760,8 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     @objc private func settingsRestoreDefaults(_ sender: Any?) {
         HostSettings.restoreDefaults(store: settingsStore)
         // Re-apply every setting from the baked defaults and refresh the controls.
+        // Set the size before (re)installing the toolbar so the rebuild uses it.
+        setToolbarStyle(bakedToolbarStyle)
         setToolbarEnabled(bakedToolbar)
         setProgressBarEnabled(bakedProgressBar)
         applyBackgroundColor(bakedBackgroundColor)

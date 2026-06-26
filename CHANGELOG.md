@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   toolbar, the page-load progress bar, and the window background color. Changes apply
   live without relaunch, persist across launches, and **Restore Defaults** reverts to the
   values baked in at create/update time.
+- The navigation toolbar now has a **size** (regular or compact). Compact uses macOS's
+  shorter unified-compact bar with smaller icons. Set it with `--toolbar-size` on
+  `create`/`update`, or live in the Settings window. Defaults to regular.
 
 ## [0.5.0] - 2026-06-25
 

@@ -42,6 +42,29 @@ final class HostSettingsTests: XCTestCase {
         XCTAssertTrue(HostSettings.toolbar(store: store, bakedDefault: false))
     }
 
+    // MARK: - Toolbar style
+
+    func testToolbarStyleFallsBackToBakedDefaultWhenNoOverride() {
+        let store = MemoryStore()
+        XCTAssertEqual(HostSettings.toolbarStyle(store: store, bakedDefault: .compact), .compact)
+        XCTAssertEqual(HostSettings.toolbarStyle(store: store, bakedDefault: .regular), .regular)
+    }
+
+    func testToolbarStyleOverrideWinsOverBakedDefault() {
+        let store = MemoryStore()
+        HostSettings.setToolbarStyle(.compact, store: store)
+        XCTAssertEqual(HostSettings.toolbarStyle(store: store, bakedDefault: .regular), .compact)
+        HostSettings.setToolbarStyle(.regular, store: store)
+        XCTAssertEqual(HostSettings.toolbarStyle(store: store, bakedDefault: .compact), .regular)
+    }
+
+    func testToolbarStyleGarbledOverrideFallsBackToDefault() {
+        // A corrupt stored value parses to the type default rather than crashing.
+        let store = MemoryStore()
+        store.set("enormous", forKey: HostSettings.Key.toolbarStyle)
+        XCTAssertEqual(HostSettings.toolbarStyle(store: store, bakedDefault: .compact), .regular)
+    }
+
     // MARK: - Progress bar
 
     func testProgressBarFallsBackToBakedDefaultWhenNoOverride() {
@@ -91,6 +114,7 @@ final class HostSettingsTests: XCTestCase {
     func testRestoreDefaultsClearsAllOverrides() {
         let store = MemoryStore()
         HostSettings.setToolbar(true, store: store)
+        HostSettings.setToolbarStyle(.compact, store: store)
         HostSettings.setProgressBar(true, store: store)
         HostSettings.setBackgroundColor("#abcdef", store: store)
 
@@ -98,8 +122,27 @@ final class HostSettingsTests: XCTestCase {
 
         // Everything falls back to the baked defaults again.
         XCTAssertFalse(HostSettings.toolbar(store: store, bakedDefault: false))
+        XCTAssertEqual(HostSettings.toolbarStyle(store: store, bakedDefault: .regular), .regular)
         XCTAssertFalse(HostSettings.progressBar(store: store, bakedDefault: false))
         XCTAssertEqual(HostSettings.backgroundColor(store: store, bakedDefault: "#1a73e8"), "#1a73e8")
         XCTAssertNil(HostSettings.backgroundColor(store: store, bakedDefault: nil))
+    }
+}
+
+final class ToolbarStyleTests: XCTestCase {
+    func testParseKnownValues() {
+        XCTAssertEqual(ToolbarStyle.parse("regular"), .regular)
+        XCTAssertEqual(ToolbarStyle.parse("compact"), .compact)
+    }
+
+    func testParseNilAndUnknownFallBackToDefault() {
+        XCTAssertEqual(ToolbarStyle.parse(nil), .default)
+        XCTAssertEqual(ToolbarStyle.parse(""), .default)
+        XCTAssertEqual(ToolbarStyle.parse("Regular"), .default) // case-sensitive raw values
+        XCTAssertEqual(ToolbarStyle.parse("huge"), .default)
+    }
+
+    func testDefaultIsRegular() {
+        XCTAssertEqual(ToolbarStyle.default, .regular)
     }
 }

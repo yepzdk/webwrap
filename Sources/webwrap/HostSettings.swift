@@ -1,5 +1,25 @@
 import Foundation
 
+/// The size of the navigation toolbar. `regular` is macOS's tall unified toolbar (the
+/// original look); `compact` is the shorter `unifiedCompact` style with smaller icons.
+/// Backed by stable raw strings so it round-trips through the `Info.plist` and
+/// `UserDefaults`. Pure — no AppKit — so it's shared by the CLI/config layers too; the
+/// host maps it to concrete AppKit metrics.
+enum ToolbarStyle: String, CaseIterable, Equatable {
+    case regular
+    case compact
+
+    /// The default when nothing is specified (and what legacy apps without the key get),
+    /// chosen to preserve the original look.
+    static let `default`: ToolbarStyle = .regular
+
+    /// Parses a stored raw value, falling back to the default for nil/unknown values so a
+    /// missing or garbled plist/UserDefaults entry is never fatal.
+    static func parse(_ raw: String?) -> ToolbarStyle {
+        raw.flatMap(ToolbarStyle.init(rawValue:)) ?? .default
+    }
+}
+
 /// Runtime-adjustable presentation settings for a generated app, layered over the
 /// values baked into the bundle's `Info.plist` at create/update time.
 ///
@@ -20,6 +40,7 @@ enum HostSettings {
     /// they don't collide with anything WebKit or AppKit may persist for the app.
     enum Key {
         static let toolbar = "webwrap.override.toolbar"
+        static let toolbarStyle = "webwrap.override.toolbarStyle"
         static let progressBar = "webwrap.override.progressBar"
         /// The background override is tri-state, so it needs two keys: a "set" marker and
         /// the value. Marker present + value present → that color; marker present + value
@@ -49,6 +70,14 @@ enum HostSettings {
         store.hasValue(forKey: Key.toolbar) ? store.bool(forKey: Key.toolbar) : bakedDefault
     }
 
+    /// The effective navigation-toolbar size: the override if one has been set, else the
+    /// baked default from the plist.
+    static func toolbarStyle(store: Store, bakedDefault: ToolbarStyle) -> ToolbarStyle {
+        store.hasValue(forKey: Key.toolbarStyle)
+            ? ToolbarStyle.parse(store.string(forKey: Key.toolbarStyle))
+            : bakedDefault
+    }
+
     /// The effective "show progress bar" value: override if set, else baked default.
     static func progressBar(store: Store, bakedDefault: Bool) -> Bool {
         store.hasValue(forKey: Key.progressBar) ? store.bool(forKey: Key.progressBar) : bakedDefault
@@ -71,6 +100,10 @@ enum HostSettings {
         store.set(value, forKey: Key.toolbar)
     }
 
+    static func setToolbarStyle(_ value: ToolbarStyle, store: Store) {
+        store.set(value.rawValue, forKey: Key.toolbarStyle)
+    }
+
     static func setProgressBar(_ value: Bool, store: Store) {
         store.set(value, forKey: Key.progressBar)
     }
@@ -87,6 +120,7 @@ enum HostSettings {
     /// Clears all overrides so every setting falls back to its baked plist default.
     static func restoreDefaults(store: Store) {
         store.remove(forKey: Key.toolbar)
+        store.remove(forKey: Key.toolbarStyle)
         store.remove(forKey: Key.progressBar)
         store.remove(forKey: Key.backgroundColorSet)
         store.remove(forKey: Key.backgroundColor)

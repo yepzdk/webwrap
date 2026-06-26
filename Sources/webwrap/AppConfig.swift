@@ -12,6 +12,9 @@ struct AppConfig: Equatable {
     /// Whether the app shows a navigation toolbar (back/forward/reload). Off by default
     /// to keep the chromeless look; opt in with `--toolbar`.
     var showToolbar: Bool
+    /// The navigation toolbar's size (regular/compact). Only meaningful when `showToolbar`
+    /// is on. Defaults to `.regular`; `--toolbar-size`.
+    var toolbarStyle: ToolbarStyle
     /// Whether the app shows a thin page-load progress line at the top of the window.
     /// Off by default; opt in with `--progress-bar`.
     var progressBar: Bool
@@ -40,6 +43,8 @@ struct AppConfig: Equatable {
         let height = Int((dict["WebWrapHeight"] as? String) ?? "") ?? 800
         // Bool keys are stored as "1"/"0"; absent (older apps) means off.
         let showToolbar = plistBool(dict["WebWrapToolbar"])
+        // Stored as a raw string; absent (older apps) / unknown falls back to the default.
+        let toolbarStyle = ToolbarStyle.parse(dict["WebWrapToolbarStyle"] as? String)
         let progressBar = plistBool(dict["WebWrapProgressBar"])
         // Optional; absent on older apps and sites without a manifest color.
         let backgroundColor = (dict["WebWrapBackgroundColor"] as? String)
@@ -48,6 +53,7 @@ struct AppConfig: Equatable {
         let openAnyURL = plistBool(dict["WebWrapOpenAnyURL"])
         return AppConfig(url: url, name: name, bundleId: bundleId,
                          width: width, height: height, showToolbar: showToolbar,
+                         toolbarStyle: toolbarStyle,
                          progressBar: progressBar,
                          backgroundColor: backgroundColor,
                          handleURLs: handleURLs, openAnyURL: openAnyURL)
@@ -74,6 +80,7 @@ struct AppConfig: Equatable {
     func applying(url: String? = nil, name: String? = nil,
                   width: Int? = nil, height: Int? = nil,
                   showToolbar: Bool? = nil,
+                  toolbarStyle: ToolbarStyle? = nil,
                   progressBar: Bool? = nil,
                   backgroundColor: String?? = nil,
                   handleURLs: Bool? = nil,
@@ -85,6 +92,7 @@ struct AppConfig: Equatable {
             width: width ?? self.width,
             height: height ?? self.height,
             showToolbar: showToolbar ?? self.showToolbar,
+            toolbarStyle: toolbarStyle ?? self.toolbarStyle,
             progressBar: progressBar ?? self.progressBar,
             // Double-optional: `nil` keeps the existing color; `.some(nil)` clears it.
             backgroundColor: backgroundColor ?? self.backgroundColor,
