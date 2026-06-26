@@ -56,6 +56,9 @@ struct Update: ParsableCommand {
           help: "Show or hide the navigation toolbar (back/forward/reload). If omitted, the current setting is kept.")
     var toolbar: Bool?
 
+    @Option(name: .long, help: "Navigation toolbar size: regular or compact (smaller). If omitted, the current setting is kept.")
+    var toolbarSize: String?
+
     @Flag(name: .long, inversion: .prefixedNo,
           help: "Show or hide the page-load progress line. If omitted, the current setting is kept.")
     var progressBar: Bool?
@@ -95,6 +98,7 @@ struct Update: ParsableCommand {
             throw ValidationError("`--background-color` and `--no-background-color` are mutually exclusive.")
         }
         if let backgroundColor { try Create.validate(backgroundColor: backgroundColor) }
+        let toolbarStyleFlag = try toolbarSize.map { try Create.parse(toolbarSize: $0) }
 
         let appPath = (path as NSString).standardizingPath
         let fm = FileManager.default
@@ -113,7 +117,8 @@ struct Update: ParsableCommand {
         // options interactively, seeded from the app's current settings; any option flag
         // (or --force) keeps the existing flag-driven path.
         let anyOptionFlag = url != nil || name != nil || icon != nil || width != nil
-            || height != nil || toolbar != nil || progressBar != nil || handleUrls != nil
+            || height != nil || toolbar != nil || toolbarStyleFlag != nil
+            || progressBar != nil || handleUrls != nil
             || openAnyUrl != nil || backgroundColor != nil || noBackgroundColor
             || sign != nil || noSign || notarize
         let mode = OptionDefaults.updateMode(isInteractive: Prompt.isInteractive,
@@ -154,7 +159,8 @@ struct Update: ParsableCommand {
             }
             merged = existing.applying(
                 url: resolvedURL, name: resolvedName, width: seed.width, height: seed.height,
-                showToolbar: seed.toolbar, progressBar: seed.progressBar,
+                showToolbar: seed.toolbar, toolbarStyle: seed.toolbarStyle,
+                progressBar: seed.progressBar,
                 backgroundColor: .some(seed.backgroundColor),
                 handleURLs: seed.handleURLs,
                 openAnyURL: OptionDefaults.resolveOpenAnyURL(handleURLs: seed.handleURLs,
@@ -181,7 +187,8 @@ struct Update: ParsableCommand {
                 urlChanged: urlChanged, reResolved: reResolved)
 
             merged = existing.applying(url: url, name: name, width: width, height: height,
-                                       showToolbar: toolbar, progressBar: progressBar,
+                                       showToolbar: toolbar, toolbarStyle: toolbarStyleFlag,
+                                       progressBar: progressBar,
                                        backgroundColor: background,
                                        handleURLs: effectiveHandleURLs, openAnyURL: openAnyUrl)
         }
@@ -201,6 +208,9 @@ struct Update: ParsableCommand {
         }
         if merged.showToolbar != existing.showToolbar {
             changes.append("Toolbar → \(merged.showToolbar ? "shown" : "hidden")")
+        }
+        if merged.toolbarStyle != existing.toolbarStyle {
+            changes.append("Toolbar size → \(merged.toolbarStyle.rawValue)")
         }
         if merged.progressBar != existing.progressBar {
             changes.append("Progress line → \(merged.progressBar ? "shown" : "hidden")")
@@ -256,6 +266,7 @@ struct Update: ParsableCommand {
             width: merged.width,
             height: merged.height,
             showToolbar: merged.showToolbar,
+            toolbarStyle: merged.toolbarStyle,
             progressBar: merged.progressBar,
             force: true,
             sign: !buildNoSign,
@@ -317,6 +328,9 @@ struct Create: ParsableCommand {
           help: "Show a navigation toolbar (back/forward/reload) in the window. Off by default.")
     var toolbar: Bool = false
 
+    @Option(name: .long, help: "Navigation toolbar size: regular or compact (smaller). Default regular.")
+    var toolbarSize: String?
+
     @Flag(name: .long, inversion: .prefixedNo,
           help: "Show a thin page-load progress line at the top of the window. Off by default.")
     var progressBar: Bool = false
@@ -353,6 +367,7 @@ struct Create: ParsableCommand {
     func run() throws {
         try Self.validateSigning(noSign: noSign, sign: sign, notarize: notarize, notaryProfile: notaryProfile)
         if let backgroundColor { try Self.validate(backgroundColor: backgroundColor) }
+        if let toolbarSize { _ = try Self.parse(toolbarSize: toolbarSize) }
         // Note the implication so `--open-any-url` alone isn't silently inert.
         if openAnyUrl && !handleUrls {
             FileHandle.standardError.write(Data(
@@ -389,8 +404,11 @@ struct Create: ParsableCommand {
     /// color when no explicit value is known.
     private func seedFromFlags(manifest: IconResolver.SiteMetadata) -> OptionSeed {
         // `--open-any-url` implies `--handle-urls`, so the seed's handleURLs reflects that.
+        // `--toolbar-size` was already validated in run(); parse falls back to the default.
         OptionDefaults.forCreate(
-            width: width, height: height, toolbar: toolbar, progressBar: progressBar,
+            width: width, height: height, toolbar: toolbar,
+            toolbarStyle: ToolbarStyle.parse(toolbarSize),
+            progressBar: progressBar,
             handleURLs: effectiveHandleURLs, openAnyURL: openAnyUrl,
             iconPath: icon, manifestBackground: manifest.launchBackgroundColor,
             explicitBackground: backgroundColor,
@@ -461,7 +479,7 @@ struct Create: ParsableCommand {
           Bundle ID:   \(bundleIdentifier)
           Icon:        \(iconSummary(seed: seed, resolvedIcon: resolvedIcon))
           Size:        \(seed.width)×\(seed.height)
-          Toolbar:     \(seed.toolbar ? "yes" : "no")
+          Toolbar:     \(seed.toolbar ? "yes (\(seed.toolbarStyle.rawValue))" : "no")
           Progress:    \(seed.progressBar ? "yes" : "no")
           Handle URLs: \(handleURLsSummary(seed: seed))
           Background:  \(seed.backgroundColor ?? "default")
@@ -512,6 +530,7 @@ struct Create: ParsableCommand {
             width: seed.width,
             height: seed.height,
             showToolbar: seed.toolbar,
+            toolbarStyle: seed.toolbarStyle,
             progressBar: seed.progressBar,
             force: force,
             sign: !seed.noSign,
@@ -549,6 +568,16 @@ struct Create: ParsableCommand {
         guard CSSColor.parse(backgroundColor) != nil else {
             throw ValidationError("Background color must be a hex color like #1a73e8.")
         }
+    }
+
+    /// Parses and validates a `--toolbar-size` value into a `ToolbarStyle`. Shared by
+    /// `create` and `update`. Throws on an unrecognized value (rather than silently
+    /// defaulting) so a typo surfaces.
+    static func parse(toolbarSize: String) throws -> ToolbarStyle {
+        guard let style = ToolbarStyle(rawValue: toolbarSize.lowercased()) else {
+            throw ValidationError("Toolbar size must be 'regular' or 'compact'.")
+        }
+        return style
     }
 
     /// A short human description of what the signing flags will do, for the summary.

@@ -10,6 +10,9 @@ struct AppBuilder {
     let height: Int
     /// Whether the generated app shows a navigation toolbar (back/forward/reload).
     let showToolbar: Bool
+    /// The navigation toolbar's size (regular/compact). Only meaningful when `showToolbar`
+    /// is on. (`--toolbar-size`.)
+    var toolbarStyle: ToolbarStyle = .default
     /// Whether the generated app shows a thin page-load progress line at the top of the
     /// window. Off by default. (`--progress-bar`.)
     var progressBar: Bool = false
@@ -130,6 +133,7 @@ struct AppBuilder {
             width: width,
             height: height,
             showToolbar: showToolbar,
+            toolbarStyle: toolbarStyle,
             progressBar: progressBar,
             backgroundColor: backgroundColor,
             handleURLs: handleURLs,
@@ -149,6 +153,7 @@ struct AppBuilder {
                               width: Int,
                               height: Int,
                               showToolbar: Bool,
+                              toolbarStyle: ToolbarStyle = .default,
                               progressBar: Bool = false,
                               backgroundColor: String? = nil,
                               handleURLs: Bool = false,
@@ -232,6 +237,8 @@ struct AppBuilder {
             <string>\(height)</string>
             <key>WebWrapToolbar</key>
             <string>\(showToolbar ? "1" : "0")</string>
+            <key>WebWrapToolbarStyle</key>
+            <string>\(toolbarStyle.rawValue)</string>
             <key>WebWrapProgressBar</key>
             <string>\(progressBar ? "1" : "0")</string>
             <key>WebWrapHandleURLs</key>

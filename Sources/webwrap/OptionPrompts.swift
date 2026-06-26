@@ -8,6 +8,7 @@ struct OptionSeed: Equatable {
     var width: Int
     var height: Int
     var toolbar: Bool
+    var toolbarStyle: ToolbarStyle
     var progressBar: Bool
     var handleURLs: Bool
     var openAnyURL: Bool
@@ -38,14 +39,16 @@ enum OptionDefaults {
     /// Seed for interactive `create`, coalescing the flags to their effective defaults. The
     /// background seed prefers an explicit `--background-color`, falling back to the
     /// manifest's color when the site provided one.
-    static func forCreate(width: Int, height: Int, toolbar: Bool, progressBar: Bool,
+    static func forCreate(width: Int, height: Int, toolbar: Bool, toolbarStyle: ToolbarStyle,
+                          progressBar: Bool,
                           handleURLs: Bool, openAnyURL: Bool,
                           iconPath: String?, manifestBackground: String?,
                           explicitBackground: String?,
                           noSign: Bool, signIdentity: String?,
                           notarize: Bool, notaryProfile: String?) -> OptionSeed {
         OptionSeed(
-            width: width, height: height, toolbar: toolbar, progressBar: progressBar,
+            width: width, height: height, toolbar: toolbar, toolbarStyle: toolbarStyle,
+            progressBar: progressBar,
             handleURLs: handleURLs, openAnyURL: openAnyURL,
             iconPath: iconPath, backgroundColor: explicitBackground ?? manifestBackground,
             noSign: noSign, signIdentity: signIdentity,
@@ -58,6 +61,7 @@ enum OptionDefaults {
     static func forUpdate(existing: AppConfig) -> OptionSeed {
         OptionSeed(
             width: existing.width, height: existing.height, toolbar: existing.showToolbar,
+            toolbarStyle: existing.toolbarStyle,
             progressBar: existing.progressBar,
             handleURLs: existing.handleURLs, openAnyURL: existing.openAnyURL,
             iconPath: nil, backgroundColor: existing.backgroundColor,
@@ -141,6 +145,15 @@ func promptForOptions(seed: OptionSeed, context: PromptContext) -> OptionSeed? {
     guard let toolbar = Prompt.confirmOrCancel(
         "Show navigation toolbar?", defaultYes: seed.toolbar) else { return nil }
     result.toolbar = toolbar
+    if toolbar {
+        // Only ask about size when the toolbar is shown — it's inert otherwise.
+        guard let compact = Prompt.confirmOrCancel(
+            "  └ Use the compact (smaller) toolbar?",
+            defaultYes: seed.toolbarStyle == .compact) else { return nil }
+        result.toolbarStyle = compact ? .compact : .regular
+    } else {
+        result.toolbarStyle = seed.toolbarStyle
+    }
 
     // Step 5 — progress line.
     Prompt.step(5, of: total, title: "Progress line",

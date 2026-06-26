@@ -18,6 +18,7 @@ final class AppConfigParseTests: XCTestCase {
             "WebWrapWidth": "1000",
             "WebWrapHeight": "700",
             "WebWrapToolbar": "1",
+            "WebWrapToolbarStyle": "compact",
             "WebWrapBackgroundColor": "#1a73e8",
             "WebWrapHandleURLs": "1",
             "WebWrapOpenAnyURL": "1",
@@ -26,7 +27,8 @@ final class AppConfigParseTests: XCTestCase {
         XCTAssertEqual(AppConfig.parse(plistData: data),
                        AppConfig(url: "https://outlook.office.com", name: "Outlook",
                                  bundleId: "dk.yepz.webwrap.outlook", width: 1000, height: 700,
-                                 showToolbar: true, progressBar: true, backgroundColor: "#1a73e8",
+                                 showToolbar: true, toolbarStyle: .compact,
+                                 progressBar: true, backgroundColor: "#1a73e8",
                                  handleURLs: true, openAnyURL: true))
     }
 
@@ -59,6 +61,24 @@ final class AppConfigParseTests: XCTestCase {
         XCTAssertEqual(cfg?.showToolbar, false)
     }
 
+    func testToolbarStyleDefaultsToRegularWhenAbsent() {
+        // Apps created before the toolbar-size setting have no WebWrapToolbarStyle key.
+        let cfg = AppConfig.parse(plistData: plist(["WebWrapURL": "https://x.test"]))
+        XCTAssertEqual(cfg?.toolbarStyle, .regular)
+    }
+
+    func testToolbarStyleUnknownValueFallsBackToRegular() {
+        let cfg = AppConfig.parse(plistData: plist([
+            "WebWrapURL": "https://x.test", "WebWrapToolbarStyle": "gigantic"]))
+        XCTAssertEqual(cfg?.toolbarStyle, .regular)
+    }
+
+    func testToolbarStyleCompactParses() {
+        let cfg = AppConfig.parse(plistData: plist([
+            "WebWrapURL": "https://x.test", "WebWrapToolbarStyle": "compact"]))
+        XCTAssertEqual(cfg?.toolbarStyle, .compact)
+    }
+
     func testNilForNonWebwrapPlist() {
         // No WebWrapURL marker → not a webwrap app.
         XCTAssertNil(AppConfig.parse(plistData: plist(["CFBundleName": "Safari"])))
@@ -78,7 +98,8 @@ final class AppConfigParseTests: XCTestCase {
 final class AppConfigApplyTests: XCTestCase {
     private let base = AppConfig(url: "https://old.test", name: "Old",
                                  bundleId: "dk.yepz.webwrap.old", width: 1200, height: 800,
-                                 showToolbar: false, progressBar: false, backgroundColor: "#123456",
+                                 showToolbar: false, toolbarStyle: .regular,
+                                 progressBar: false, backgroundColor: "#123456",
                                  handleURLs: false, openAnyURL: false)
 
     func testNoOverridesCarriesEverything() {
@@ -111,6 +132,13 @@ final class AppConfigApplyTests: XCTestCase {
         // A nil override (flag omitted on `update`) keeps the existing setting.
         let on = base.applying(showToolbar: true)
         XCTAssertTrue(on.applying(url: "https://new.test").showToolbar)
+    }
+
+    func testToolbarStyleOverrideAndCarryOver() {
+        XCTAssertEqual(base.applying(toolbarStyle: .compact).toolbarStyle, .compact)
+        // A nil override (flag omitted) keeps the existing style.
+        let compact = base.applying(toolbarStyle: .compact)
+        XCTAssertEqual(compact.applying(url: "https://new.test").toolbarStyle, .compact)
     }
 
     func testProgressBarOverrideToggles() {

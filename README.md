@@ -108,6 +108,7 @@ Passing both `--url` and `--name` skips the prompts entirely and builds straight
 | `--width` | Initial window width (points) | `1200` |
 | `--height` | Initial window height (points) | `800` |
 | `--toolbar` | Show a navigation toolbar (back/forward/reload) | off |
+| `--toolbar-size` | Navigation toolbar size: `regular` or `compact` (smaller) | `regular` |
 | `--progress-bar` | Show a thin page-load progress line at the top of the window | off |
 | `--handle-urls` | Register as an http/https handler and open URLs the app is launched with (e.g. from Choosy) | off |
 | `--open-any-url` | With `--handle-urls`, also accept off-domain URLs (default: only same-site) | off |
@@ -175,6 +176,7 @@ Run with just the app path on a terminal and `update` walks the same prompts as 
 | `--icon` | New `.png`/`.icns` icon (existing icon kept if omitted) |
 | `--width`, `--height` | New window size |
 | `--toolbar` / `--no-toolbar` | Show or hide the navigation toolbar (current setting kept if omitted) |
+| `--toolbar-size` | Navigation toolbar size: `regular` or `compact` (current setting kept if omitted) |
 | `--progress-bar` / `--no-progress-bar` | Show or hide the page-load progress line (current setting kept if omitted) |
 | `--handle-urls` / `--no-handle-urls` | Turn URL handling on or off (current setting kept if omitted) |
 | `--open-any-url` / `--no-open-any-url` | Allow or restrict off-domain URLs (current setting kept if omitted) |
@@ -186,7 +188,7 @@ The session survives because it's keyed to the app's bundle identifier, which `u
 
 ### Settings inside the app
 
-For the presentation-level options you don't need the terminal: every generated app has a **Settings** window (⌘, , or the app menu) to toggle the navigation toolbar, the page-load progress bar, and the window background color. Changes apply live — no relaunch — and persist across launches. **Restore Defaults** reverts to the values baked in at create/update time.
+For the presentation-level options you don't need the terminal: every generated app has a **Settings** window (⌘, , or the app menu) to toggle the navigation toolbar (and its size, regular or compact), the page-load progress bar, and the window background color. Changes apply live — no relaunch — and persist across launches. **Restore Defaults** reverts to the values baked in at create/update time.
 
 These in-app settings are overrides layered on top of the baked-in defaults, so an `update` that changes, say, the background color updates the default the app falls back to. Identity (URL, name, icon) and signing remain `create`/`update`-only.
 
