@@ -15,11 +15,14 @@ A **single binary** runs in two modes — this is the central design decision, d
 
 The target URL and window size are passed from CLI to host via custom `Info.plist` keys (`WebWrapURL`, `WebWrapWidth`, `WebWrapHeight`, and `WebWrapCreatorVersion` for the About panel) baked in at create time.
 
+The presentation settings (toolbar, progress bar, background color) baked into the plist are **defaults**: the app's in-app Settings window writes per-app overrides to `UserDefaults`, and the host resolves the effective value as override-over-baked-default at launch (see `HostSettings`). A signed bundle's `Info.plist` is read-only at runtime, so overrides can't live there; `update` still rewrites the baked defaults, and "Restore Defaults" clears the overrides.
+
 ### Files
 
 - `Sources/webwrap/main.swift` — mode router (host vs CLI).
 - `Sources/webwrap/CLI.swift` — `ParsableCommand` definitions (`WebWrap`, `Create`, `List`, `Update`).
-- `Sources/webwrap/Host.swift` — the `WKWebView` host (`runHost()` + `HostDelegate`), including the app's main menu and About panel.
+- `Sources/webwrap/Host.swift` — the `WKWebView` host (`runHost()` + `HostDelegate`), including the app's main menu, About panel, and in-app Settings window (⌘,).
+- `Sources/webwrap/HostSettings.swift` — pure resolution of the runtime-adjustable presentation settings (toolbar, progress bar, background color) as override-over-baked-default, plus the `UserDefaults`-backed store the host wires in.
 - `Sources/webwrap/AppBuilder.swift` — bundle scaffolding, `Info.plist`, icon conversion, signing, notarization.
 - `Sources/webwrap/IconResolver.swift` — resolves a site's best icon (manifest → apple-touch-icon → link icon → og:image → favicon → favicon service); pure parsing behind an injectable fetch.
 - `Sources/webwrap/AppConfig.swift` — reads a generated app's config back from its `Info.plist`; used by `update`.
