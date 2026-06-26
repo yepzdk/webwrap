@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- Generated apps now have an in-app **Settings** window (⌘,) to toggle the navigation
+  toolbar, the page-load progress bar, and the window background color. Changes apply
+  live without relaunch, persist across launches, and **Restore Defaults** reverts to the
+  values baked in at create/update time.
+
 ## [0.5.0] - 2026-06-25
 
 ### Added

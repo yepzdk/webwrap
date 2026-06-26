@@ -184,6 +184,12 @@ Run with just the app path on a terminal and `update` walks the same prompts as 
 
 The session survives because it's keyed to the app's bundle identifier, which `update` keeps stable even across a URL or name change. `update` refuses any bundle that isn't a webwrap app.
 
+### Settings inside the app
+
+For the presentation-level options you don't need the terminal: every generated app has a **Settings** window (⌘, , or the app menu) to toggle the navigation toolbar, the page-load progress bar, and the window background color. Changes apply live — no relaunch — and persist across launches. **Restore Defaults** reverts to the values baked in at create/update time.
+
+These in-app settings are overrides layered on top of the baked-in defaults, so an `update` that changes, say, the background color updates the default the app falls back to. Identity (URL, name, icon) and signing remain `create`/`update`-only.
+
 ## Sharing generated apps with other Macs
 
 By default, generated apps are **ad-hoc signed** (`codesign --sign -`), which lets them run on the machine that built them. Apps you send to *other* Macs will trip Gatekeeper on first launch ("can't be opened because Apple cannot check it for malware"). Recipients can either **right-click the app → Open** (confirm once), or strip the quarantine flag with `xattr -dr com.apple.quarantine "/Applications/Whatever.app"`.

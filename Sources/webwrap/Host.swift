@@ -53,6 +53,24 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     /// The app's own site host, used to scope incoming URLs to the same site.
     private var appHost: String?
 
+    /// The runtime override store (UserDefaults), layered over the baked-in plist
+    /// defaults. The in-app Settings window writes here; launch reads effective values
+    /// through `HostSettings`.
+    private let settingsStore: HostSettings.Store = HostDefaultsStore()
+    /// The baked-in plist defaults, captured at launch so "Restore Defaults" can fall
+    /// back to them and the Settings window can resolve effective values.
+    private var bakedToolbar = false
+    private var bakedProgressBar = false
+    private var bakedBackgroundColor: String?
+
+    /// The Settings (Preferences) window, built lazily on first open and retained.
+    private var settingsWindow: NSWindow?
+    /// Controls inside the Settings window, kept so "Restore Defaults" can refresh them.
+    private weak var toolbarCheckbox: NSButton?
+    private weak var progressCheckbox: NSButton?
+    private weak var backgroundColorWell: NSColorWell?
+    private weak var backgroundEnabledCheckbox: NSButton?
+
     private func info(_ key: String) -> String? {
         Bundle.main.object(forInfoDictionaryKey: key) as? String
     }
@@ -114,7 +132,13 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         let width = Double(info("WebWrapWidth") ?? "1200") ?? 1200
         let height = Double(info("WebWrapHeight") ?? "800") ?? 800
 
-        backgroundColorRaw = info("WebWrapBackgroundColor")
+        // Capture the baked-in plist defaults, then resolve the effective values through
+        // any in-app overrides. The plist value is the default; UserDefaults can override.
+        bakedToolbar = info("WebWrapToolbar") == "1"
+        bakedProgressBar = info("WebWrapProgressBar") == "1"
+        bakedBackgroundColor = info("WebWrapBackgroundColor")
+        backgroundColorRaw = HostSettings.backgroundColor(store: settingsStore,
+                                                          bakedDefault: bakedBackgroundColor)
 
         let config = WKWebViewConfiguration()
         config.websiteDataStore = Self.makeDataStore()
@@ -138,33 +162,25 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         webView.allowsBackForwardNavigationGestures = true
         window.contentView!.addSubview(webView)
 
-        // Paint the window and the web view's under-page area with the manifest's
-        // background color so the first frame isn't a white flash before the page
-        // renders. Skipped when there's no color or it isn't a form we parse.
-        // `underPageBackgroundColor` is the public API for this (macOS 12+, so always
-        // available at our 13 deployment target) — avoid the `drawsBackground` KVC
-        // trick, which reaches a private ivar and raises on current WebKit SDKs.
-        if let raw = backgroundColorRaw, let rgba = CSSColor.parse(raw) {
-            let color = NSColor(red: rgba.red, green: rgba.green,
-                                blue: rgba.blue, alpha: rgba.alpha)
-            window.backgroundColor = color
-            webView.underPageBackgroundColor = color
-        }
+        // Paint the window and the web view's under-page area with the effective
+        // background color so the first frame isn't a white flash before the page renders.
+        applyBackgroundColor(backgroundColorRaw)
 
         // A real main menu is required for the standard editing shortcuts (⌘C/⌘V/⌘X/⌘A)
         // to reach the focused web content — without it, paste silently does nothing.
         // It also provides Quit and the About panel.
         NSApp.mainMenu = buildMainMenu(appName: title)
 
-        // Optional navigation toolbar (opt-in via WebWrapToolbar). Off keeps the
-        // chromeless look; on shows back/forward/reload in the window's title bar.
-        if info("WebWrapToolbar") == "1" {
+        // Optional navigation toolbar (opt-in via WebWrapToolbar, overridable in Settings).
+        // Off keeps the chromeless look; on shows back/forward/reload in the title bar.
+        if HostSettings.toolbar(store: settingsStore, bakedDefault: bakedToolbar) {
             installToolbar()
         }
 
-        // Optional page-load progress line (opt-in via WebWrapProgressBar): a thin accent
-        // hairline along the top edge that tracks estimatedProgress and fades out on finish.
-        if info("WebWrapProgressBar") == "1" {
+        // Optional page-load progress line (opt-in via WebWrapProgressBar, overridable in
+        // Settings): a thin accent hairline along the top edge that tracks
+        // estimatedProgress and fades out on finish.
+        if HostSettings.progressBar(store: settingsStore, bakedDefault: bakedProgressBar) {
             installProgressBar()
         }
 
@@ -199,6 +215,10 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         let appMenu = NSMenu()
         appItem.submenu = appMenu
         appMenu.addItem(withTitle: "About \(appName)", action: #selector(showAbout(_:)), keyEquivalent: "")
+            .target = self
+        appMenu.addItem(.separator())
+        // Settings… (⌘,) — the standard macOS location for app preferences.
+        appMenu.addItem(withTitle: "Settings…", action: #selector(showSettings(_:)), keyEquivalent: ",")
             .target = self
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Hide \(appName)", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
@@ -298,6 +318,24 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         navObservers = [\WKWebView.canGoBack, \WKWebView.canGoForward].map { keyPath in
             webView.observe(keyPath) { [weak self] _, _ in self?.updateNavEnablement() }
         }
+    }
+
+    /// Removes the navigation toolbar and stops observing history, returning the window to
+    /// its chromeless look. Safe to call when no toolbar is installed.
+    private func removeToolbar() {
+        navObservers.forEach { $0.invalidate() }
+        navObservers = []
+        backButton = nil
+        forwardButton = nil
+        window.toolbar = nil
+    }
+
+    /// Installs or removes the navigation toolbar to match `enabled`, idempotently — a
+    /// no-op when already in the requested state. Drives the live Settings toggle.
+    private func setToolbarEnabled(_ enabled: Bool) {
+        let isInstalled = window.toolbar != nil
+        guard enabled != isInstalled else { return }
+        if enabled { installToolbar() } else { removeToolbar() }
     }
 
     private func updateNavEnablement() {
@@ -436,6 +474,48 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         }
     }
 
+    /// Removes the progress line and stops observing load progress. Safe to call when no
+    /// progress bar is installed.
+    private func removeProgressBar() {
+        progressObserver?.invalidate()
+        progressObserver = nil
+        progressBar?.removeFromSuperview()
+        progressBar = nil
+        progressWidth = nil
+        progressFraction = 0
+    }
+
+    /// Installs or removes the progress line to match `enabled`, idempotently. Drives the
+    /// live Settings toggle.
+    private func setProgressBarEnabled(_ enabled: Bool) {
+        let isInstalled = progressBar != nil
+        guard enabled != isInstalled else { return }
+        if enabled { installProgressBar() } else { removeProgressBar() }
+    }
+
+    // MARK: - Background color
+
+    /// Paints (or clears) the window and the web view's under-page area to `raw` (a CSS
+    /// color string, or nil to clear). Keeps `backgroundColorRaw` in sync so the offline
+    /// fallback tint matches. `underPageBackgroundColor` is the public API for this
+    /// (macOS 12+, so always available at our 13 deployment target) — avoid the
+    /// `drawsBackground` KVC trick, which reaches a private ivar and raises on current
+    /// WebKit SDKs. Used at launch and by the live Settings color control.
+    private func applyBackgroundColor(_ raw: String?) {
+        backgroundColorRaw = raw
+        if let raw, let rgba = CSSColor.parse(raw) {
+            let color = NSColor(red: rgba.red, green: rgba.green,
+                                blue: rgba.blue, alpha: rgba.alpha)
+            window.backgroundColor = color
+            webView.underPageBackgroundColor = color
+        } else {
+            // Clear: revert to AppKit's default window background. The web view's
+            // under-page color is non-optional, so reset it to the same system default.
+            window.backgroundColor = .windowBackgroundColor
+            webView.underPageBackgroundColor = .windowBackgroundColor
+        }
+    }
+
     /// Drives the line from the raw `estimatedProgress` (0...1): shows a visible sliver as
     /// soon as a load starts, grows toward the real value, then on completion fills and
     /// fades out. The width math is in the pure `LoadProgress` helper.
@@ -483,6 +563,155 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         } else {
             container.layoutSubtreeIfNeeded()
         }
+    }
+
+    // MARK: - Settings window
+
+    /// Opens the Settings window, building it on first use. Brings an already-open window
+    /// to the front rather than creating a second one.
+    @objc private func showSettings(_ sender: Any?) {
+        if settingsWindow == nil {
+            settingsWindow = buildSettingsWindow()
+        }
+        // Refresh controls from the current effective values each time it's shown, in case
+        // anything changed since it was last built.
+        syncSettingsControls()
+        settingsWindow?.center()
+        settingsWindow?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Builds the compact Settings panel: two checkboxes (toolbar, progress bar), a
+    /// background color row (enable checkbox + color well), and a Restore Defaults button.
+    /// Each control writes its override via `HostSettings` and applies the change live.
+    private func buildSettingsWindow() -> NSWindow {
+        let padding: CGFloat = 20
+        let rowHeight: CGFloat = 28
+        let width: CGFloat = 360
+
+        let toolbar = makeCheckbox(title: "Show navigation toolbar",
+                                   action: #selector(settingsToolbarChanged(_:)))
+        let progress = makeCheckbox(title: "Show page-load progress bar",
+                                    action: #selector(settingsProgressChanged(_:)))
+        let bgEnabled = makeCheckbox(title: "Window background color",
+                                     action: #selector(settingsBackgroundEnabledChanged(_:)))
+
+        let colorWell = NSColorWell(frame: .zero)
+        colorWell.translatesAutoresizingMaskIntoConstraints = false
+        colorWell.target = self
+        colorWell.action = #selector(settingsBackgroundColorChanged(_:))
+
+        let restore = NSButton(title: "Restore Defaults", target: self,
+                               action: #selector(settingsRestoreDefaults(_:)))
+        restore.translatesAutoresizingMaskIntoConstraints = false
+        restore.bezelStyle = .rounded
+
+        toolbarCheckbox = toolbar
+        progressCheckbox = progress
+        backgroundEnabledCheckbox = bgEnabled
+        backgroundColorWell = colorWell
+
+        // Background row: the enable checkbox and the color well side by side.
+        let bgRow = NSStackView(views: [bgEnabled, colorWell])
+        bgRow.orientation = .horizontal
+        bgRow.spacing = 8
+        bgRow.alignment = .centerY
+
+        let stack = NSStackView(views: [toolbar, progress, bgRow, restore])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 12
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        let contentRect = NSRect(x: 0, y: 0, width: width,
+                                 height: padding * 2 + rowHeight * 4 + 12 * 3)
+        let window = NSWindow(contentRect: contentRect,
+                              styleMask: [.titled, .closable],
+                              backing: .buffered, defer: false)
+        window.title = "Settings"
+        window.isReleasedWhenClosed = false // we retain and reuse it
+        let content = window.contentView!
+        content.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: padding),
+            stack.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -padding),
+            stack.topAnchor.constraint(equalTo: content.topAnchor, constant: padding),
+            colorWell.widthAnchor.constraint(equalToConstant: 44),
+            colorWell.heightAnchor.constraint(equalToConstant: 24),
+        ])
+        return window
+    }
+
+    /// A standard AppKit checkbox button targeting `self`.
+    private func makeCheckbox(title: String, action: Selector) -> NSButton {
+        let button = NSButton(checkboxWithTitle: title, target: self, action: action)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }
+
+    /// Refreshes the Settings controls to reflect the current effective values. Called on
+    /// open and after Restore Defaults.
+    private func syncSettingsControls() {
+        let toolbarOn = HostSettings.toolbar(store: settingsStore, bakedDefault: bakedToolbar)
+        let progressOn = HostSettings.progressBar(store: settingsStore, bakedDefault: bakedProgressBar)
+        let bg = HostSettings.backgroundColor(store: settingsStore, bakedDefault: bakedBackgroundColor)
+
+        toolbarCheckbox?.state = toolbarOn ? .on : .off
+        progressCheckbox?.state = progressOn ? .on : .off
+        backgroundEnabledCheckbox?.state = bg != nil ? .on : .off
+        if let bg, let rgba = CSSColor.parse(bg) {
+            backgroundColorWell?.color = NSColor(red: rgba.red, green: rgba.green,
+                                                 blue: rgba.blue, alpha: rgba.alpha)
+        }
+        backgroundColorWell?.isEnabled = bg != nil
+    }
+
+    @objc private func settingsToolbarChanged(_ sender: NSButton) {
+        let on = sender.state == .on
+        HostSettings.setToolbar(on, store: settingsStore)
+        setToolbarEnabled(on)
+    }
+
+    @objc private func settingsProgressChanged(_ sender: NSButton) {
+        let on = sender.state == .on
+        HostSettings.setProgressBar(on, store: settingsStore)
+        setProgressBarEnabled(on)
+    }
+
+    /// Toggling the background-enable checkbox: on adopts the color well's current color;
+    /// off clears the background (an explicit "no color" override).
+    @objc private func settingsBackgroundEnabledChanged(_ sender: NSButton) {
+        let on = sender.state == .on
+        backgroundColorWell?.isEnabled = on
+        let color: String? = on ? hexString(from: backgroundColorWell?.color) : nil
+        HostSettings.setBackgroundColor(color, store: settingsStore)
+        applyBackgroundColor(color)
+    }
+
+    @objc private func settingsBackgroundColorChanged(_ sender: NSColorWell) {
+        let color = hexString(from: sender.color)
+        HostSettings.setBackgroundColor(color, store: settingsStore)
+        applyBackgroundColor(color)
+    }
+
+    @objc private func settingsRestoreDefaults(_ sender: Any?) {
+        HostSettings.restoreDefaults(store: settingsStore)
+        // Re-apply every setting from the baked defaults and refresh the controls.
+        setToolbarEnabled(bakedToolbar)
+        setProgressBarEnabled(bakedProgressBar)
+        applyBackgroundColor(bakedBackgroundColor)
+        syncSettingsControls()
+    }
+
+    /// Converts an `NSColor` to a `#rrggbb` string for storage and re-parsing via
+    /// `CSSColor`. Returns nil for a nil color. Converts to sRGB first so the channel
+    /// reads are well-defined regardless of the well's working color space.
+    private func hexString(from color: NSColor?) -> String? {
+        guard let color = color?.usingColorSpace(.sRGB) else { return nil }
+        let r = Int((color.redComponent * 255).rounded())
+        let g = Int((color.greenComponent * 255).rounded())
+        let b = Int((color.blueComponent * 255).rounded())
+        return String(format: "#%02x%02x%02x", r, g, b)
     }
 
     // MARK: - Incoming URLs (open the app with a URL)
