@@ -32,6 +32,7 @@ final class InfoPlistTests: XCTestCase {
                        width: Int = 1200,
                        height: Int = 800,
                        showToolbar: Bool = false,
+                       toolbarStyle: ToolbarStyle = .default,
                        progressBar: Bool = false,
                        backgroundColor: String? = nil,
                        handleURLs: Bool = false,
@@ -41,6 +42,7 @@ final class InfoPlistTests: XCTestCase {
             name: name, url: url, bundleId: bundleId,
             executable: "webwrap-host", iconFile: "AppIcon.icns",
             width: width, height: height, showToolbar: showToolbar,
+            toolbarStyle: toolbarStyle,
             progressBar: progressBar,
             backgroundColor: backgroundColor, handleURLs: handleURLs,
             openAnyURL: openAnyURL, creatorVersion: creatorVersion)
@@ -69,6 +71,11 @@ final class InfoPlistTests: XCTestCase {
     func testToolbarKeyReflectsFlag() {
         XCTAssertTrue(plist(showToolbar: true).contains("<key>WebWrapToolbar</key>\n    <string>1</string>"))
         XCTAssertTrue(plist(showToolbar: false).contains("<key>WebWrapToolbar</key>\n    <string>0</string>"))
+    }
+
+    func testToolbarStyleKeyReflectsValue() {
+        XCTAssertTrue(plist(toolbarStyle: .regular).contains("<key>WebWrapToolbarStyle</key>\n    <string>regular</string>"))
+        XCTAssertTrue(plist(toolbarStyle: .compact).contains("<key>WebWrapToolbarStyle</key>\n    <string>compact</string>"))
     }
 
     func testURLHandlingKeysReflectFlags() {
