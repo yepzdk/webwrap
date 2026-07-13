@@ -431,8 +431,11 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     @objc private func showAbout(_ sender: Any?) {
         let appName = info("CFBundleName") ?? "WebWrap"
         let version = info("CFBundleShortVersionString") ?? "1.0"
-        let credits = HostAbout.credits(url: info("WebWrapURL"),
-                                        creatorVersion: info("WebWrapCreatorVersion"))
+        // Built at click time, so the identity line reflects a live Settings override.
+        let credits = HostAbout.credits(
+            url: info("WebWrapURL"),
+            creatorVersion: info("WebWrapCreatorVersion"),
+            userAgent: HostSettings.userAgent(store: settingsStore, bakedDefault: bakedUserAgent))
         let attributed = NSAttributedString(
             string: credits,
             attributes: [.font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)])
@@ -1007,11 +1010,12 @@ enum LoadProgress: Equatable {
 /// Pure text for the generated app's About panel. Kept free of AppKit so it's
 /// unit-testable.
 enum HostAbout {
-    static func credits(url: String?, creatorVersion: String?) -> String {
+    static func credits(url: String?, creatorVersion: String?, userAgent: String? = nil) -> String {
         var lines: [String] = []
         if let url, !url.isEmpty {
             lines.append("Opens: \(url)")
         }
+        lines.append("Browser identity: \(UserAgent.displayName(for: userAgent))")
         if let creatorVersion, !creatorVersion.isEmpty {
             lines.append("Created with webwrap \(creatorVersion)")
         } else {

@@ -32,6 +32,20 @@ enum UserAgent {
     /// Drives help text and the Settings popup so they can't drift from `presets`.
     static let presetTokens = ["safari", "chrome", "edge"]
 
+    /// Human-readable name of a raw setting value, for display (About panel):
+    /// nil/empty/`safari` → "Safari (default)", preset tokens → their capitalized
+    /// names, anything else → "Custom" (the full string is visible in Settings).
+    static func displayName(for raw: String?) -> String {
+        guard let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty else { return "Safari (default)" }
+        switch raw.lowercased() {
+        case "safari": return "Safari (default)"
+        case "chrome": return "Chrome"
+        case "edge": return "Edge"
+        default: return "Custom"
+        }
+    }
+
     /// What to assign to `WKWebView.customUserAgent` for a raw setting value:
     /// nil/empty/`safari` → nil (keep the Safari-suffixed default), a preset token →
     /// its full UA string, anything else → the string verbatim (a custom UA).
