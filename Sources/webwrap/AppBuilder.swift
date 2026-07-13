@@ -37,6 +37,10 @@ struct AppBuilder {
     /// can paint the window before first paint. Nil when unknown. Typically the site's
     /// manifest `background_color`/`theme_color`, resolved at create time.
     var backgroundColor: String? = nil
+    /// User-agent setting baked into the bundle: a preset token (safari/chrome/edge)
+    /// or a literal UA string. Nil means the default (Safari-equivalent UA). The host
+    /// resolves it via `UserAgent`. (`--user-agent`.)
+    var userAgent: String? = nil
     /// Whether the app registers as an http/https handler (CFBundleURLTypes) and
     /// navigates to URLs it's opened with. Off by default. (`--handle-urls`.)
     var handleURLs: Bool = false
@@ -136,6 +140,7 @@ struct AppBuilder {
             toolbarStyle: toolbarStyle,
             progressBar: progressBar,
             backgroundColor: backgroundColor,
+            userAgent: userAgent,
             handleURLs: handleURLs,
             openAnyURL: openAnyURL,
             creatorVersion: WebWrap.configuration.version
@@ -156,6 +161,7 @@ struct AppBuilder {
                               toolbarStyle: ToolbarStyle = .default,
                               progressBar: Bool = false,
                               backgroundColor: String? = nil,
+                              userAgent: String? = nil,
                               handleURLs: Bool = false,
                               openAnyURL: Bool = false,
                               creatorVersion: String) -> String {
@@ -173,6 +179,18 @@ struct AppBuilder {
             """
         } else {
             backgroundColorEntry = ""
+        }
+        // Optional key, same shape as the background color: absent means "default
+        // (Safari) user agent".
+        let userAgentEntry: String
+        if let userAgent, !userAgent.isEmpty {
+            userAgentEntry = """
+                <key>WebWrapUserAgent</key>
+                <string>\(xmlEscape(userAgent))</string>
+
+            """
+        } else {
+            userAgentEntry = ""
         }
         // Register as an http/https viewer ONLY when handling URLs is enabled, so apps
         // don't claim those schemes system-wide unless the user opted in. Emitted just
@@ -245,7 +263,7 @@ struct AppBuilder {
             <string>\(handleURLs ? "1" : "0")</string>
             <key>WebWrapOpenAnyURL</key>
             <string>\(openAnyURL ? "1" : "0")</string>
-            \(backgroundColorEntry)\(urlTypesEntry)<key>WebWrapCreatorVersion</key>
+            \(backgroundColorEntry)\(userAgentEntry)\(urlTypesEntry)<key>WebWrapCreatorVersion</key>
             <string>\(escapedCreator)</string>
         </dict>
         </plist>

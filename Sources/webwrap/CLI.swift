@@ -77,6 +77,12 @@ struct Update: ParsableCommand {
     @Flag(name: .long, help: "Clear the window background color (no color painted on launch).")
     var noBackgroundColor: Bool = false
 
+    @Option(name: .long, help: "Browser identity: safari, chrome, edge, or a full custom UA string. If omitted, the current setting is kept.")
+    var userAgent: String?
+
+    @Flag(name: .long, help: "Reset to the default (Safari) user agent.")
+    var noUserAgent: Bool = false
+
     @Flag(name: .long, help: "Skip ad-hoc code signing.")
     var noSign: Bool = false
 
@@ -96,6 +102,9 @@ struct Update: ParsableCommand {
         try Create.validateSigning(noSign: noSign, sign: sign, notarize: notarize, notaryProfile: notaryProfile)
         if backgroundColor != nil && noBackgroundColor {
             throw ValidationError("`--background-color` and `--no-background-color` are mutually exclusive.")
+        }
+        if userAgent != nil && noUserAgent {
+            throw ValidationError("`--user-agent` and `--no-user-agent` are mutually exclusive.")
         }
         if let backgroundColor { try Create.validate(backgroundColor: backgroundColor) }
         let toolbarStyleFlag = try toolbarSize.map { try Create.parse(toolbarSize: $0) }
@@ -120,6 +129,7 @@ struct Update: ParsableCommand {
             || height != nil || toolbar != nil || toolbarStyleFlag != nil
             || progressBar != nil || handleUrls != nil
             || openAnyUrl != nil || backgroundColor != nil || noBackgroundColor
+            || userAgent != nil || noUserAgent
             || sign != nil || noSign || notarize
         let mode = OptionDefaults.updateMode(isInteractive: Prompt.isInteractive,
                                              anyOptionFlag: anyOptionFlag, force: force)
@@ -162,6 +172,7 @@ struct Update: ParsableCommand {
                 showToolbar: seed.toolbar, toolbarStyle: seed.toolbarStyle,
                 progressBar: seed.progressBar,
                 backgroundColor: .some(seed.backgroundColor),
+                userAgent: .some(seed.userAgent),
                 handleURLs: seed.handleURLs,
                 openAnyURL: OptionDefaults.resolveOpenAnyURL(handleURLs: seed.handleURLs,
                                                              openAnyURL: seed.openAnyURL))
@@ -190,6 +201,8 @@ struct Update: ParsableCommand {
                                        showToolbar: toolbar, toolbarStyle: toolbarStyleFlag,
                                        progressBar: progressBar,
                                        backgroundColor: background,
+                                       userAgent: OptionDefaults.resolveUpdateUserAgent(
+                                           explicit: userAgent, clear: noUserAgent),
                                        handleURLs: effectiveHandleURLs, openAnyURL: openAnyUrl)
         }
 
@@ -223,6 +236,9 @@ struct Update: ParsableCommand {
         }
         if merged.backgroundColor != existing.backgroundColor {
             changes.append("Background → \(merged.backgroundColor ?? "default")")
+        }
+        if merged.userAgent != existing.userAgent {
+            changes.append("User agent → \(merged.userAgent ?? "safari (default)")")
         }
         if let iconOverride { changes.append("Icon → \(iconOverride)") }
         print("Updating \(existing.name) at \(appPath):")
@@ -274,6 +290,7 @@ struct Update: ParsableCommand {
             notarize: buildNotarize,
             notaryProfile: buildNotaryProfile,
             backgroundColor: merged.backgroundColor,
+            userAgent: merged.userAgent,
             handleURLs: merged.handleURLs,
             openAnyURL: merged.openAnyURL
         )
@@ -344,6 +361,9 @@ struct Create: ParsableCommand {
     @Option(name: .long, help: "Hex color painted behind the page on launch (e.g. #1a73e8). Overrides the site manifest's color.")
     var backgroundColor: String?
 
+    @Option(name: .long, help: "Browser identity the app reports: safari (default), chrome, edge, or a full custom UA string.")
+    var userAgent: String?
+
     @Flag(name: .long, help: "Overwrite the destination .app if it already exists.")
     var force: Bool = false
 
@@ -411,7 +431,7 @@ struct Create: ParsableCommand {
             progressBar: progressBar,
             handleURLs: effectiveHandleURLs, openAnyURL: openAnyUrl,
             iconPath: icon, manifestBackground: manifest.launchBackgroundColor,
-            explicitBackground: backgroundColor,
+            explicitBackground: backgroundColor, userAgent: userAgent,
             noSign: noSign, signIdentity: sign, notarize: notarize, notaryProfile: notaryProfile)
     }
 
@@ -459,7 +479,7 @@ struct Create: ParsableCommand {
             }
         }
 
-        // Steps 3–8 — the remaining options, seeded from the flags (and the manifest
+        // Steps 3–10 — the remaining options, seeded from the flags (and the manifest
         // background). An explicit --icon seeds the icon prompt; otherwise it auto-resolves.
         guard let seed = promptForOptions(seed: seedFromFlags(manifest: site.metadata),
                                           context: .create) else {
@@ -483,6 +503,7 @@ struct Create: ParsableCommand {
           Progress:    \(seed.progressBar ? "yes" : "no")
           Handle URLs: \(handleURLsSummary(seed: seed))
           Background:  \(seed.backgroundColor ?? "default")
+          User agent:  \(seed.userAgent ?? "safari (default)")
           Signing:     \(Self.signingDescription(noSign: seed.noSign, sign: seed.signIdentity, notarize: seed.notarize))
           Destination: \(destination)
         """)
@@ -539,6 +560,7 @@ struct Create: ParsableCommand {
             notaryProfile: seed.notaryProfile,
             resolvedIcon: resolvedIcon,
             backgroundColor: seed.backgroundColor,
+            userAgent: seed.userAgent,
             handleURLs: seed.handleURLs,
             openAnyURL: OptionDefaults.resolveOpenAnyURL(handleURLs: seed.handleURLs,
                                                          openAnyURL: seed.openAnyURL)

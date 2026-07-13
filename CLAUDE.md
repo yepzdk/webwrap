@@ -22,7 +22,8 @@ The presentation settings (toolbar, progress bar, background color) baked into t
 - `Sources/webwrap/main.swift` — mode router (host vs CLI).
 - `Sources/webwrap/CLI.swift` — `ParsableCommand` definitions (`WebWrap`, `Create`, `List`, `Update`).
 - `Sources/webwrap/Host.swift` — the `WKWebView` host (`runHost()` + `HostDelegate`), including the app's main menu, About panel, and in-app Settings window (⌘,).
-- `Sources/webwrap/HostSettings.swift` — pure resolution of the runtime-adjustable presentation settings (toolbar, progress bar, background color) as override-over-baked-default, plus the `UserDefaults`-backed store the host wires in.
+- `Sources/webwrap/HostSettings.swift` — pure resolution of the runtime-adjustable presentation settings (toolbar, progress bar, background color, user agent) as override-over-baked-default, plus the `UserDefaults`-backed store the host wires in.
+- `Sources/webwrap/UserAgent.swift` — pure resolution of the user-agent setting (safari/chrome/edge preset tokens or a custom string) to what the host applies; the default appends `Version/x Safari/x` so apps identify as Safari.
 - `Sources/webwrap/AppBuilder.swift` — bundle scaffolding, `Info.plist`, icon conversion, signing, notarization.
 - `Sources/webwrap/IconResolver.swift` — resolves a site's best icon (manifest → apple-touch-icon → link icon → og:image → favicon → favicon service); pure parsing behind an injectable fetch.
 - `Sources/webwrap/AppConfig.swift` — reads a generated app's config back from its `Info.plist`; used by `update`.

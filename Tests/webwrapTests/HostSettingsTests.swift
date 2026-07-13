@@ -109,6 +109,34 @@ final class HostSettingsTests: XCTestCase {
         XCTAssertNil(HostSettings.backgroundColor(store: store, bakedDefault: "#1a73e8"))
     }
 
+    // MARK: - User agent (tri-state)
+
+    func testUserAgentUnsetUsesBakedDefault() {
+        let store = MemoryStore()
+        XCTAssertEqual(HostSettings.userAgent(store: store, bakedDefault: "edge"), "edge")
+        XCTAssertNil(HostSettings.userAgent(store: store, bakedDefault: nil))
+    }
+
+    func testUserAgentExplicitValueWinsOverBakedDefault() {
+        let store = MemoryStore()
+        HostSettings.setUserAgent("chrome", store: store)
+        XCTAssertEqual(HostSettings.userAgent(store: store, bakedDefault: "edge"), "chrome")
+        XCTAssertEqual(HostSettings.userAgent(store: store, bakedDefault: nil), "chrome")
+    }
+
+    func testUserAgentExplicitClearOverridesBakedValue() {
+        let store = MemoryStore()
+        // User explicitly chose the default — a baked preset must NOT show through.
+        HostSettings.setUserAgent(nil, store: store)
+        XCTAssertNil(HostSettings.userAgent(store: store, bakedDefault: "edge"))
+    }
+
+    func testUserAgentEmptyStringTreatedAsCleared() {
+        let store = MemoryStore()
+        HostSettings.setUserAgent("", store: store)
+        XCTAssertNil(HostSettings.userAgent(store: store, bakedDefault: "edge"))
+    }
+
     // MARK: - Restore defaults
 
     func testRestoreDefaultsClearsAllOverrides() {
@@ -117,6 +145,7 @@ final class HostSettingsTests: XCTestCase {
         HostSettings.setToolbarStyle(.compact, store: store)
         HostSettings.setProgressBar(true, store: store)
         HostSettings.setBackgroundColor("#abcdef", store: store)
+        HostSettings.setUserAgent("chrome", store: store)
 
         HostSettings.restoreDefaults(store: store)
 
@@ -126,6 +155,8 @@ final class HostSettingsTests: XCTestCase {
         XCTAssertFalse(HostSettings.progressBar(store: store, bakedDefault: false))
         XCTAssertEqual(HostSettings.backgroundColor(store: store, bakedDefault: "#1a73e8"), "#1a73e8")
         XCTAssertNil(HostSettings.backgroundColor(store: store, bakedDefault: nil))
+        XCTAssertEqual(HostSettings.userAgent(store: store, bakedDefault: "edge"), "edge")
+        XCTAssertNil(HostSettings.userAgent(store: store, bakedDefault: nil))
     }
 }
 

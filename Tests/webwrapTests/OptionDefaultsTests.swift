@@ -11,11 +11,12 @@ final class OptionDefaultsForCreateTests: XCTestCase {
             width: 1200, height: 800, toolbar: false, toolbarStyle: .regular, progressBar: false,
             handleURLs: false, openAnyURL: false,
             iconPath: nil, manifestBackground: "#1a73e8", explicitBackground: nil,
+            userAgent: nil,
             noSign: false, signIdentity: nil, notarize: false, notaryProfile: nil)
         XCTAssertEqual(seed, OptionSeed(
             width: 1200, height: 800, toolbar: false, toolbarStyle: .regular, progressBar: false,
             handleURLs: false, openAnyURL: false,
-            iconPath: nil, backgroundColor: "#1a73e8",
+            iconPath: nil, backgroundColor: "#1a73e8", userAgent: nil,
             noSign: false, signIdentity: nil, notarize: false, notaryProfile: nil))
     }
 
@@ -24,6 +25,7 @@ final class OptionDefaultsForCreateTests: XCTestCase {
             width: 1200, height: 800, toolbar: false, toolbarStyle: .regular, progressBar: false,
             handleURLs: false, openAnyURL: false,
             iconPath: nil, manifestBackground: "#1a73e8", explicitBackground: "#ff0000",
+            userAgent: nil,
             noSign: false, signIdentity: nil, notarize: false, notaryProfile: nil)
         XCTAssertEqual(seed.backgroundColor, "#ff0000")
     }
@@ -33,6 +35,7 @@ final class OptionDefaultsForCreateTests: XCTestCase {
             width: 1000, height: 700, toolbar: true, toolbarStyle: .compact, progressBar: true,
             handleURLs: true, openAnyURL: true,
             iconPath: "/tmp/x.png", manifestBackground: nil, explicitBackground: nil,
+            userAgent: "edge",
             noSign: true, signIdentity: "Developer ID Application: X", notarize: false, notaryProfile: nil)
         XCTAssertEqual(seed.width, 1000)
         XCTAssertEqual(seed.height, 700)
@@ -43,6 +46,7 @@ final class OptionDefaultsForCreateTests: XCTestCase {
         XCTAssertTrue(seed.openAnyURL)
         XCTAssertEqual(seed.iconPath, "/tmp/x.png")
         XCTAssertNil(seed.backgroundColor)
+        XCTAssertEqual(seed.userAgent, "edge")
         XCTAssertTrue(seed.noSign)
         XCTAssertEqual(seed.signIdentity, "Developer ID Application: X")
     }
@@ -53,6 +57,7 @@ final class OptionDefaultsForUpdateTests: XCTestCase {
         url: "https://github.com", name: "GitHub", bundleId: "dk.yepz.webwrap.github",
         width: 1400, height: 900, showToolbar: true, toolbarStyle: .compact,
         progressBar: true, backgroundColor: "#0d1117",
+        userAgent: "chrome",
         handleURLs: true, openAnyURL: false)
 
     func testMapsPersistedConfigToSeed() {
@@ -63,6 +68,7 @@ final class OptionDefaultsForUpdateTests: XCTestCase {
         XCTAssertEqual(seed.toolbarStyle, .compact)
         XCTAssertTrue(seed.progressBar)
         XCTAssertEqual(seed.backgroundColor, "#0d1117")
+        XCTAssertEqual(seed.userAgent, "chrome")
         XCTAssertTrue(seed.handleURLs)
         XCTAssertFalse(seed.openAnyURL)
     }
@@ -114,6 +120,25 @@ final class ResolveUpdateBackgroundTests: XCTestCase {
             explicit: nil, clear: false, urlChanged: false, reResolved: nil)
         // nil — carry over the existing color.
         XCTAssertEqual(r, .none)
+    }
+}
+
+final class ResolveUpdateUserAgentTests: XCTestCase {
+    // The result is a String??: nil = carry over, .some(nil) = reset, .some(x) = set.
+
+    func testClearWinsOverExplicit() {
+        let r = OptionDefaults.resolveUpdateUserAgent(explicit: "edge", clear: true)
+        guard case .some(let inner) = r else { return XCTFail("expected .some") }
+        XCTAssertNil(inner)
+    }
+
+    func testExplicitSets() {
+        XCTAssertEqual(OptionDefaults.resolveUpdateUserAgent(explicit: "edge", clear: false),
+                       .some("edge"))
+    }
+
+    func testNoFlagsCarriesOver() {
+        XCTAssertEqual(OptionDefaults.resolveUpdateUserAgent(explicit: nil, clear: false), .none)
     }
 }
 

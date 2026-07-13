@@ -22,6 +22,9 @@ struct AppConfig: Equatable {
     /// white first-paint flash. Nil when unset. Derived from the site's manifest at
     /// create time; carried over on update.
     var backgroundColor: String?
+    /// User-agent setting: a preset token (safari/chrome/edge) or a literal UA string.
+    /// Nil means the default (Safari-equivalent) UA. `--user-agent`.
+    var userAgent: String?
     /// Whether the app registers as an http/https handler and navigates to URLs it's
     /// opened with (e.g. from Choosy). Off by default; `--handle-urls`.
     var handleURLs: Bool
@@ -49,6 +52,8 @@ struct AppConfig: Equatable {
         // Optional; absent on older apps and sites without a manifest color.
         let backgroundColor = (dict["WebWrapBackgroundColor"] as? String)
             .flatMap { $0.isEmpty ? nil : $0 }
+        let userAgent = (dict["WebWrapUserAgent"] as? String)
+            .flatMap { $0.isEmpty ? nil : $0 }
         let handleURLs = plistBool(dict["WebWrapHandleURLs"])
         let openAnyURL = plistBool(dict["WebWrapOpenAnyURL"])
         return AppConfig(url: url, name: name, bundleId: bundleId,
@@ -56,6 +61,7 @@ struct AppConfig: Equatable {
                          toolbarStyle: toolbarStyle,
                          progressBar: progressBar,
                          backgroundColor: backgroundColor,
+                         userAgent: userAgent,
                          handleURLs: handleURLs, openAnyURL: openAnyURL)
     }
 
@@ -83,6 +89,7 @@ struct AppConfig: Equatable {
                   toolbarStyle: ToolbarStyle? = nil,
                   progressBar: Bool? = nil,
                   backgroundColor: String?? = nil,
+                  userAgent: String?? = nil,
                   handleURLs: Bool? = nil,
                   openAnyURL: Bool? = nil) -> AppConfig {
         AppConfig(
@@ -94,8 +101,9 @@ struct AppConfig: Equatable {
             showToolbar: showToolbar ?? self.showToolbar,
             toolbarStyle: toolbarStyle ?? self.toolbarStyle,
             progressBar: progressBar ?? self.progressBar,
-            // Double-optional: `nil` keeps the existing color; `.some(nil)` clears it.
+            // Double-optional: `nil` keeps the existing value; `.some(nil)` clears it.
             backgroundColor: backgroundColor ?? self.backgroundColor,
+            userAgent: userAgent ?? self.userAgent,
             handleURLs: handleURLs ?? self.handleURLs,
             openAnyURL: openAnyURL ?? self.openAnyURL)
     }

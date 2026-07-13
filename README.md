@@ -9,7 +9,7 @@ Wrap any website into a standalone macOS `.app` — a lightweight, native altern
 - **CLI mode** — when you run `webwrap create ...`, it generates an `.app` bundle.
 - **Host mode** — the same binary is copied into the generated bundle as its executable. When you launch the app, the bundle's `Info.plist` sets `WEBWRAP_HOST=1` (via `LSEnvironment`), so the binary boots a single WebKit window pointed at the baked-in URL instead of parsing CLI arguments.
 
-Each generated app uses WebKit (the system web engine — same as Safari), persists its own login/cookie session, and remembers its window size and position. If a page can't load (you're offline, the host is unreachable, or it times out), the app shows a clean fallback with a **Try Again** button rather than a generic browser error.
+Each generated app uses WebKit (the system web engine — same as Safari), persists its own login/cookie session, and remembers its window size and position. Apps identify as Safari by default — so UA-sniffing sites don't mistake them for an outdated browser — and can present as Chrome, Edge, or a custom user agent via `--user-agent`. If a page can't load (you're offline, the host is unreachable, or it times out), the app shows a clean fallback with a **Try Again** button rather than a generic browser error.
 
 ## Sessions & login
 
@@ -57,26 +57,26 @@ $ webwrap create
 webwrap — create a macOS app from a website
 Press Enter to accept the [default]. Type q to cancel.
 
-[Step 1/9] Website URL
+[Step 1/10] Website URL
   The address the app opens, e.g. https://github.com.
 URL: https://outlook.office.com
 Resolving icon…
 
-[Step 2/9] App name
+[Step 2/10] App name
   The display name and the .app filename.
 Name [Outlook]:
 
-[Step 4/9] Toolbar
+[Step 4/10] Toolbar
   A back/forward/reload bar in the title area.
   Off keeps the chromeless look.
 Show navigation toolbar? [y/N]:
 
-[Step 5/9] Progress line
+[Step 5/10] Progress line
   A thin accent line at the top edge that tracks page loads
   and fades out when done.
 Show page-load progress line? [y/N]:
 
-… (steps 3, 6–9: window size, URL handling, background, icon, signing) …
+… (steps 3, 6–10: window size, URL handling, background, browser identity, icon, signing) …
 
 Summary
   Name:        Outlook
@@ -88,6 +88,7 @@ Summary
   Progress:    no
   Handle URLs: no
   Background:  default
+  User agent:  safari (default)
   Signing:     ad-hoc
   Destination: /Applications/Outlook.app
 
@@ -113,6 +114,7 @@ Passing both `--url` and `--name` skips the prompts entirely and builds straight
 | `--handle-urls` | Register as an http/https handler and open URLs the app is launched with (e.g. from Choosy) | off |
 | `--open-any-url` | With `--handle-urls`, also accept off-domain URLs (default: only same-site) | off |
 | `--background-color` | Hex color painted behind the page on launch (e.g. `#1a73e8`); overrides the site manifest's color | manifest |
+| `--user-agent` | Browser identity the app reports: `safari`, `chrome`, `edge`, or a full custom UA string. Apps identify as Safari by default, which fixes most "browser not supported" pages | `safari` |
 | `--force` | Overwrite an existing `.app` | off |
 | `--no-sign` | Skip ad-hoc code signing | off |
 | `--sign` | Sign with a Developer ID identity (enables the hardened runtime) | ad-hoc |
@@ -181,6 +183,7 @@ Run with just the app path on a terminal and `update` walks the same prompts as 
 | `--handle-urls` / `--no-handle-urls` | Turn URL handling on or off (current setting kept if omitted) |
 | `--open-any-url` / `--no-open-any-url` | Allow or restrict off-domain URLs (current setting kept if omitted) |
 | `--background-color` / `--no-background-color` | Set or clear the window background color. If omitted, it follows the new `--url`'s manifest color when the URL changes, otherwise the current setting is kept |
+| `--user-agent` / `--no-user-agent` | Set the browser identity (`safari`/`chrome`/`edge` or a custom UA string) or reset it to the Safari default (current setting kept if omitted) |
 | `--sign`, `--notarize`, `--notary-profile`, `--no-sign` | Signing, same as `create` |
 | `--force` | Skip the confirmation prompt |
 
@@ -188,7 +191,7 @@ The session survives because it's keyed to the app's bundle identifier, which `u
 
 ### Settings inside the app
 
-For the presentation-level options you don't need the terminal: every generated app has a **Settings** window (⌘, , or the app menu) to toggle the navigation toolbar (and its size, regular or compact), the page-load progress bar, and the window background color. Changes apply live — no relaunch — and persist across launches. **Restore Defaults** reverts to the values baked in at create/update time.
+For the presentation-level options you don't need the terminal: every generated app has a **Settings** window (⌘, , or the app menu) to toggle the navigation toolbar (and its size, regular or compact), the page-load progress bar, the window background color, and the browser identity (Safari/Chrome/Edge or a custom user-agent string). Changes apply live — no relaunch — and persist across launches. **Restore Defaults** reverts to the values baked in at create/update time.
 
 These in-app settings are overrides layered on top of the baked-in defaults, so an `update` that changes, say, the background color updates the default the app falls back to. Identity (URL, name, icon) and signing remain `create`/`update`-only.
 
