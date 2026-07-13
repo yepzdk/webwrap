@@ -66,6 +66,7 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     private var bakedToolbarStyle: ToolbarStyle = .default
     private var bakedProgressBar = false
     private var bakedBackgroundColor: String?
+    private var bakedUserAgent: String?
 
     /// The Settings (Preferences) window, built lazily on first open and retained.
     private var settingsWindow: NSWindow?
@@ -76,6 +77,8 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     private weak var progressCheckbox: NSButton?
     private weak var backgroundColorWell: NSColorWell?
     private weak var backgroundEnabledCheckbox: NSButton?
+    private weak var userAgentPopup: NSPopUpButton?
+    private weak var userAgentField: NSTextField?
 
     private func info(_ key: String) -> String? {
         Bundle.main.object(forInfoDictionaryKey: key) as? String
@@ -144,12 +147,17 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         bakedToolbarStyle = ToolbarStyle.parse(info("WebWrapToolbarStyle"))
         bakedProgressBar = info("WebWrapProgressBar") == "1"
         bakedBackgroundColor = info("WebWrapBackgroundColor")
+        bakedUserAgent = info("WebWrapUserAgent")
         backgroundColorRaw = HostSettings.backgroundColor(store: settingsStore,
                                                           bakedDefault: bakedBackgroundColor)
 
         let config = WKWebViewConfiguration()
         config.websiteDataStore = Self.makeDataStore()
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
+        // Identify as Safari by default: WKWebView's stock UA lacks the
+        // "Version/x Safari/x" suffix, which UA-sniffing sites read as an ancient or
+        // unknown browser ("this browser is no longer supported").
+        config.applicationNameForUserAgent = UserAgent.safariApplicationName
         // The offline fallback page's Retry button posts here to reload the intended URL.
         config.userContentController.add(self, name: "webwrapRetry")
 
@@ -167,6 +175,9 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
+        // Chrome/Edge presets and custom strings replace the whole UA; nil keeps the
+        // Safari-suffixed default from applicationNameForUserAgent above.
+        applyUserAgent(HostSettings.userAgent(store: settingsStore, bakedDefault: bakedUserAgent))
         window.contentView!.addSubview(webView)
 
         // Paint the window and the web view's under-page area with the effective
@@ -542,6 +553,16 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         }
     }
 
+    // MARK: - User agent
+
+    /// Applies the raw user-agent setting (preset token / custom string / nil) to the
+    /// web view. nil clears `customUserAgent`, falling back to the Safari-suffixed
+    /// default configured via `applicationNameForUserAgent`. Takes effect on the next
+    /// navigation; callers that change it at runtime should reload.
+    private func applyUserAgent(_ raw: String?) {
+        webView.customUserAgent = UserAgent.customUserAgent(for: raw)
+    }
+
     /// Drives the line from the raw `estimatedProgress` (0...1): shows a visible sliver as
     /// soon as a load starts, grows toward the real value, then on completion fills and
     /// fades out. The width math is in the pure `LoadProgress` helper.
@@ -643,12 +664,27 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         restore.translatesAutoresizingMaskIntoConstraints = false
         restore.bezelStyle = .rounded
 
+        // Browser identity: a preset popup plus a text field for a custom UA string
+        // (enabled only when "Custom…" is selected).
+        let uaLabel = NSTextField(labelWithString: "Browser identity")
+        let uaPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+        uaPopup.addItems(withTitles: ["Safari (default)", "Chrome", "Edge", "Custom…"])
+        uaPopup.target = self
+        uaPopup.action = #selector(settingsUserAgentChanged(_:))
+        let uaField = NSTextField(string: "")
+        uaField.placeholderString = "Custom user-agent string"
+        uaField.target = self
+        uaField.action = #selector(settingsUserAgentChanged(_:))
+        uaField.translatesAutoresizingMaskIntoConstraints = false
+
         toolbarCheckbox = toolbar
         toolbarSizeControl = sizeControl
         toolbarSizeLabel = sizeLabel
         progressCheckbox = progress
         backgroundEnabledCheckbox = bgEnabled
         backgroundColorWell = colorWell
+        userAgentPopup = uaPopup
+        userAgentField = uaField
 
         // Toolbar-size row: label + segmented picker, indented under the toolbar checkbox.
         let sizeRow = NSStackView(views: [sizeLabel, sizeControl])
@@ -663,14 +699,19 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         bgRow.spacing = 8
         bgRow.alignment = .centerY
 
-        let stack = NSStackView(views: [toolbar, sizeRow, progress, bgRow, restore])
+        let uaRow = NSStackView(views: [uaLabel, uaPopup])
+        uaRow.orientation = .horizontal
+        uaRow.spacing = 8
+        uaRow.alignment = .centerY
+
+        let stack = NSStackView(views: [toolbar, sizeRow, progress, bgRow, uaRow, uaField, restore])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 12
         stack.translatesAutoresizingMaskIntoConstraints = false
 
         let contentRect = NSRect(x: 0, y: 0, width: width,
-                                 height: padding * 2 + rowHeight * 5 + 12 * 4)
+                                 height: padding * 2 + rowHeight * 7 + 12 * 6)
         let window = NSWindow(contentRect: contentRect,
                               styleMask: [.titled, .closable],
                               backing: .buffered, defer: false)
@@ -684,6 +725,8 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
             stack.topAnchor.constraint(equalTo: content.topAnchor, constant: padding),
             colorWell.widthAnchor.constraint(equalToConstant: 44),
             colorWell.heightAnchor.constraint(equalToConstant: 24),
+            uaField.leadingAnchor.constraint(equalTo: stack.leadingAnchor),
+            uaField.trailingAnchor.constraint(equalTo: stack.trailingAnchor),
         ])
         return window
     }
@@ -716,6 +759,20 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
                                                  blue: rgba.blue, alpha: rgba.alpha)
         }
         backgroundColorWell?.isEnabled = bg != nil
+
+        // Popup selection mirrors the effective raw value; unrecognized strings are a
+        // custom UA and land in the text field.
+        let ua = HostSettings.userAgent(store: settingsStore, bakedDefault: bakedUserAgent)
+        let index: Int
+        switch ua?.lowercased() {
+        case nil, "safari": index = 0
+        case "chrome": index = 1
+        case "edge": index = 2
+        default: index = 3
+        }
+        userAgentPopup?.selectItem(at: index)
+        userAgentField?.stringValue = index == 3 ? (ua ?? "") : ""
+        userAgentField?.isEnabled = index == 3
     }
 
     @objc private func settingsToolbarChanged(_ sender: NSButton) {
@@ -757,6 +814,32 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         applyBackgroundColor(color)
     }
 
+    /// The raw user-agent value the Settings controls currently describe: a preset
+    /// token for the popup's presets, the field's text for Custom (empty → default).
+    private func selectedUserAgentValue() -> String? {
+        switch userAgentPopup?.indexOfSelectedItem {
+        case 1: return "chrome"
+        case 2: return "edge"
+        case 3:
+            let text = (userAgentField?.stringValue ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return text.isEmpty ? nil : text
+        default: return nil // Safari / default
+        }
+    }
+
+    /// Fired by both the popup and the custom text field. Persists the override,
+    /// applies it, and reloads so the change is visible — but only when the effective
+    /// UA actually changed (re-selecting the current item shouldn't reload the page).
+    @objc private func settingsUserAgentChanged(_ sender: Any?) {
+        let value = selectedUserAgentValue()
+        HostSettings.setUserAgent(value, store: settingsStore)
+        userAgentField?.isEnabled = userAgentPopup?.indexOfSelectedItem == 3
+        let before = webView.customUserAgent
+        applyUserAgent(value)
+        if webView.customUserAgent != before { webView.reload() }
+    }
+
     @objc private func settingsRestoreDefaults(_ sender: Any?) {
         HostSettings.restoreDefaults(store: settingsStore)
         // Re-apply every setting from the baked defaults and refresh the controls.
@@ -765,6 +848,9 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         setToolbarEnabled(bakedToolbar)
         setProgressBarEnabled(bakedProgressBar)
         applyBackgroundColor(bakedBackgroundColor)
+        let before = webView.customUserAgent
+        applyUserAgent(bakedUserAgent)
+        if webView.customUserAgent != before { webView.reload() }
         syncSettingsControls()
     }
 

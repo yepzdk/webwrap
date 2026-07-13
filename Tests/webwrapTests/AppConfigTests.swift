@@ -20,6 +20,7 @@ final class AppConfigParseTests: XCTestCase {
             "WebWrapToolbar": "1",
             "WebWrapToolbarStyle": "compact",
             "WebWrapBackgroundColor": "#1a73e8",
+            "WebWrapUserAgent": "edge",
             "WebWrapHandleURLs": "1",
             "WebWrapOpenAnyURL": "1",
             "WebWrapProgressBar": "1",
@@ -29,6 +30,7 @@ final class AppConfigParseTests: XCTestCase {
                                  bundleId: "dk.yepz.webwrap.outlook", width: 1000, height: 700,
                                  showToolbar: true, toolbarStyle: .compact,
                                  progressBar: true, backgroundColor: "#1a73e8",
+                                 userAgent: "edge",
                                  handleURLs: true, openAnyURL: true))
     }
 
@@ -47,6 +49,17 @@ final class AppConfigParseTests: XCTestCase {
         let cfg = AppConfig.parse(plistData: plist([
             "WebWrapURL": "https://x.test", "WebWrapBackgroundColor": ""]))
         XCTAssertNil(cfg?.backgroundColor)
+    }
+
+    func testUserAgentAbsentParsesNil() {
+        let cfg = AppConfig.parse(plistData: plist(["WebWrapURL": "https://x.test"]))
+        XCTAssertNil(cfg?.userAgent)
+    }
+
+    func testUserAgentEmptyParsesNil() {
+        let cfg = AppConfig.parse(plistData: plist([
+            "WebWrapURL": "https://x.test", "WebWrapUserAgent": ""]))
+        XCTAssertNil(cfg?.userAgent)
     }
 
     func testToolbarDefaultsOffWhenAbsent() {
@@ -100,6 +113,7 @@ final class AppConfigApplyTests: XCTestCase {
                                  bundleId: "dk.yepz.webwrap.old", width: 1200, height: 800,
                                  showToolbar: false, toolbarStyle: .regular,
                                  progressBar: false, backgroundColor: "#123456",
+                                 userAgent: "chrome",
                                  handleURLs: false, openAnyURL: false)
 
     func testNoOverridesCarriesEverything() {
@@ -161,6 +175,16 @@ final class AppConfigApplyTests: XCTestCase {
         XCTAssertEqual(base.applying(backgroundColor: "#abcdef").backgroundColor, "#abcdef")
         // .some(nil) clears it (double-optional inner nil).
         XCTAssertNil(base.applying(backgroundColor: .some(nil)).backgroundColor)
+    }
+
+    func testUserAgentCarriedOverByDefault() {
+        XCTAssertEqual(base.applying(url: "https://new.test").userAgent, "chrome")
+    }
+
+    func testUserAgentCanBeReplacedAndCleared() {
+        XCTAssertEqual(base.applying(userAgent: "edge").userAgent, "edge")
+        // .some(nil) resets to the default (double-optional inner nil).
+        XCTAssertNil(base.applying(userAgent: .some(nil)).userAgent)
     }
 
     func testURLHandlingOverrideToggles() {

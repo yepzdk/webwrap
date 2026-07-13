@@ -16,6 +16,8 @@ struct OptionSeed: Equatable {
     var iconPath: String?
     /// CSS background color, or nil meaning "none / from manifest".
     var backgroundColor: String?
+    /// User-agent token (safari/chrome/edge) or a custom UA string; nil = default (Safari).
+    var userAgent: String?
     var noSign: Bool
     var signIdentity: String?
     var notarize: Bool
@@ -43,7 +45,7 @@ enum OptionDefaults {
                           progressBar: Bool,
                           handleURLs: Bool, openAnyURL: Bool,
                           iconPath: String?, manifestBackground: String?,
-                          explicitBackground: String?,
+                          explicitBackground: String?, userAgent: String?,
                           noSign: Bool, signIdentity: String?,
                           notarize: Bool, notaryProfile: String?) -> OptionSeed {
         OptionSeed(
@@ -51,6 +53,7 @@ enum OptionDefaults {
             progressBar: progressBar,
             handleURLs: handleURLs, openAnyURL: openAnyURL,
             iconPath: iconPath, backgroundColor: explicitBackground ?? manifestBackground,
+            userAgent: userAgent,
             noSign: noSign, signIdentity: signIdentity,
             notarize: notarize, notaryProfile: notaryProfile)
     }
@@ -65,6 +68,7 @@ enum OptionDefaults {
             progressBar: existing.progressBar,
             handleURLs: existing.handleURLs, openAnyURL: existing.openAnyURL,
             iconPath: nil, backgroundColor: existing.backgroundColor,
+            userAgent: existing.userAgent,
             noSign: false, signIdentity: nil, notarize: false, notaryProfile: nil)
     }
 
@@ -81,6 +85,15 @@ enum OptionDefaults {
         if clear { return .some(nil) }
         if let explicit { return .some(explicit) }
         if urlChanged { return .some(reResolved) }
+        return nil
+    }
+
+    /// Resolves what user agent a flag-driven `update` should apply, as the
+    /// double-optional `AppConfig.applying(userAgent:)` expects: `nil` keeps the
+    /// existing setting, `.some(nil)` resets to the default, `.some(x)` sets it.
+    static func resolveUpdateUserAgent(explicit: String?, clear: Bool) -> String?? {
+        if clear { return .some(nil) }
+        if let explicit { return .some(explicit) }
         return nil
     }
 
@@ -113,12 +126,12 @@ enum PromptContext {
 }
 
 /// Total steps in the full interactive flow, used for the `[Step n/total]` indicator.
-/// URL (1) and Name (2) are prompted by the caller; `promptForOptions` covers 3–9.
+/// URL (1) and Name (2) are prompted by the caller; `promptForOptions` covers 3–10.
 /// Conditional follow-ups (off-domain, notarize) nest under their parent step rather than
 /// taking their own number, so the denominator is stable.
-let interactiveStepCount = 9
+let interactiveStepCount = 10
 
-/// Walks the option prompts (steps 3–9) in order, each seeded from `seed`, with a step
+/// Walks the option prompts (steps 3–10) in order, each seeded from `seed`, with a step
 /// header + help text, and returns the filled-in values. Returns nil if the user cancels
 /// (types q / Ctrl-D) at any step. Reads real stdin via `Prompt`, so — like `Prompt`
 /// itself — it carries no business logic worth unit-testing; the seed/implication logic it
@@ -186,9 +199,17 @@ func promptForOptions(seed: OptionSeed, context: PromptContext) -> OptionSeed? {
         validate: colorValidator) else { return nil }
     result.backgroundColor = background
 
-    // Step 8 — icon.
+    // Step 8 — user agent (browser identity).
+    Prompt.step(8, of: total, title: "Browser identity",
+                help: "The user agent the app reports: safari (default), chrome, edge,\nor a full custom UA string. Helps with \"browser not supported\" pages.")
+    guard let userAgent = Prompt.askWithDefault(
+        "User agent", default: seed.userAgent, defaultDisplay: seed.userAgent ?? "safari",
+        validate: { .valid($0) }) else { return nil }
+    result.userAgent = userAgent
+
+    // Step 9 — icon.
     let iconBlankMeans = context == .create ? "resolve from the site" : "keep the existing icon"
-    Prompt.step(8, of: total, title: "Icon",
+    Prompt.step(9, of: total, title: "Icon",
                 help: "Path to a .png or .icns file. Blank to \(iconBlankMeans).")
     let iconDefaultDisplay = seed.iconPath ?? (context == .create ? "resolve from site" : "keep existing")
     guard let iconPath = Prompt.askWithDefault(
@@ -196,8 +217,8 @@ func promptForOptions(seed: OptionSeed, context: PromptContext) -> OptionSeed? {
         validate: iconValidator) else { return nil }
     result.iconPath = iconPath
 
-    // Step 9 — signing.
-    Prompt.step(9, of: total, title: "Signing",
+    // Step 10 — signing.
+    Prompt.step(10, of: total, title: "Signing",
                 help: "Ad-hoc signing works for local use. Developer ID + notarization\nis for distributing the app to others.")
     guard let signing = promptForSigning(seed: seed) else { return nil }
     result.noSign = signing.noSign

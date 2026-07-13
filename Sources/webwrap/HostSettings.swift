@@ -47,6 +47,9 @@ enum HostSettings {
         /// absent → explicitly cleared (no color); marker absent → fall back to baked.
         static let backgroundColorSet = "webwrap.override.backgroundColorSet"
         static let backgroundColor = "webwrap.override.backgroundColorValue"
+        /// The user-agent override is tri-state like the background: marker + value.
+        static let userAgentSet = "webwrap.override.userAgentSet"
+        static let userAgent = "webwrap.override.userAgentValue"
     }
 
     /// The minimal read/write surface `HostSettings` needs from a key-value store.
@@ -94,6 +97,13 @@ enum HostSettings {
         return store.string(forKey: Key.backgroundColor).flatMap { $0.isEmpty ? nil : $0 }
     }
 
+    /// The effective user-agent setting (a preset token or custom UA string, nil for the
+    /// default Safari identity). Same tri-state semantics as `backgroundColor`.
+    static func userAgent(store: Store, bakedDefault: String?) -> String? {
+        guard store.bool(forKey: Key.userAgentSet) else { return bakedDefault }
+        return store.string(forKey: Key.userAgent).flatMap { $0.isEmpty ? nil : $0 }
+    }
+
     // MARK: - Writing overrides
 
     static func setToolbar(_ value: Bool, store: Store) {
@@ -115,6 +125,13 @@ enum HostSettings {
         store.set(value, forKey: Key.backgroundColor)
     }
 
+    /// Sets the user-agent override. `nil` records an explicit "default (Safari)" (which
+    /// overrides a baked value); anything else records that token/string.
+    static func setUserAgent(_ value: String?, store: Store) {
+        store.set(true, forKey: Key.userAgentSet)
+        store.set(value, forKey: Key.userAgent)
+    }
+
     // MARK: - Restore defaults
 
     /// Clears all overrides so every setting falls back to its baked plist default.
@@ -124,6 +141,8 @@ enum HostSettings {
         store.remove(forKey: Key.progressBar)
         store.remove(forKey: Key.backgroundColorSet)
         store.remove(forKey: Key.backgroundColor)
+        store.remove(forKey: Key.userAgentSet)
+        store.remove(forKey: Key.userAgent)
     }
 }
 

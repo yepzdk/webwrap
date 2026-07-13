@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - The navigation toolbar now has a **size** (regular or compact). Compact uses macOS's
   shorter unified-compact bar with smaller icons. Set it with `--toolbar-size` on
   `create`/`update`, or live in the Settings window. Defaults to regular.
+- `--user-agent` on `create`/`update` (and a selector in the in-app Settings) sets the
+  browser identity: `safari`, `chrome`, `edge`, or a custom UA string. `update
+  --no-user-agent` resets to the default. (#60)
+
+### Changed
+- Generated apps now identify as Safari by default (WKWebView's stock user agent lacks
+  the `Safari/…` token), fixing "this browser is no longer supported" pages. (#60)
 
 ## [0.5.0] - 2026-06-25
 

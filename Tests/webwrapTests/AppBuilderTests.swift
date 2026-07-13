@@ -35,6 +35,7 @@ final class InfoPlistTests: XCTestCase {
                        toolbarStyle: ToolbarStyle = .default,
                        progressBar: Bool = false,
                        backgroundColor: String? = nil,
+                       userAgent: String? = nil,
                        handleURLs: Bool = false,
                        openAnyURL: Bool = false,
                        creatorVersion: String = "0.3.0") -> String {
@@ -44,7 +45,8 @@ final class InfoPlistTests: XCTestCase {
             width: width, height: height, showToolbar: showToolbar,
             toolbarStyle: toolbarStyle,
             progressBar: progressBar,
-            backgroundColor: backgroundColor, handleURLs: handleURLs,
+            backgroundColor: backgroundColor, userAgent: userAgent,
+            handleURLs: handleURLs,
             openAnyURL: openAnyURL, creatorVersion: creatorVersion)
     }
 
@@ -126,6 +128,23 @@ final class InfoPlistTests: XCTestCase {
         let dict = try XCTUnwrap(obj as? [String: Any])
         XCTAssertEqual(dict["WebWrapBackgroundColor"] as? String, "#1a73e8")
         XCTAssertEqual(dict["WebWrapToolbar"] as? String, "0")
+    }
+
+    func testUserAgentKeyOmittedWhenNil() {
+        XCTAssertFalse(plist(userAgent: nil).contains("WebWrapUserAgent"))
+    }
+
+    func testUserAgentKeyEmittedWhenSet() {
+        XCTAssertTrue(plist(userAgent: "edge")
+            .contains("<key>WebWrapUserAgent</key>\n    <string>edge</string>"))
+    }
+
+    func testRemainsValidPlistWithUserAgent() throws {
+        // A custom UA can contain XML-significant characters; guard the escaping.
+        let xml = plist(userAgent: "Custom <UA> & \"quotes\"")
+        let obj = try PropertyListSerialization.propertyList(from: Data(xml.utf8), format: nil)
+        let dict = try XCTUnwrap(obj as? [String: Any])
+        XCTAssertEqual(dict["WebWrapUserAgent"] as? String, "Custom <UA> & \"quotes\"")
     }
 
     func testEscapesNameAndURL() {
