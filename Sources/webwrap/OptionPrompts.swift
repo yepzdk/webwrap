@@ -154,7 +154,7 @@ func promptForOptions(seed: OptionSeed, context: PromptContext) -> OptionSeed? {
 
     // Step 4 — toolbar.
     Prompt.step(4, of: total, title: "Toolbar",
-                help: "A back/forward/reload bar in the title area.\nOff keeps the chromeless look.")
+                help: "A back/forward/reload/home bar in the title area.\nOff keeps the chromeless look.")
     guard let toolbar = Prompt.confirmOrCancel(
         "Show navigation toolbar?", defaultYes: seed.toolbar) else { return nil }
     result.toolbar = toolbar

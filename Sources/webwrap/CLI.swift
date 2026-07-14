@@ -53,7 +53,7 @@ struct Update: ParsableCommand {
     var height: Int?
 
     @Flag(name: .long, inversion: .prefixedNo,
-          help: "Show or hide the navigation toolbar (back/forward/reload). If omitted, the current setting is kept.")
+          help: "Show or hide the navigation toolbar (back/forward/reload/home). If omitted, the current setting is kept.")
     var toolbar: Bool?
 
     @Option(name: .long, help: "Navigation toolbar size: regular or compact (smaller). If omitted, the current setting is kept.")
@@ -342,7 +342,7 @@ struct Create: ParsableCommand {
     var height: Int = 800
 
     @Flag(name: .long, inversion: .prefixedNo,
-          help: "Show a navigation toolbar (back/forward/reload) in the window. Off by default.")
+          help: "Show a navigation toolbar (back/forward/reload/home) in the window. Off by default.")
     var toolbar: Bool = false
 
     @Option(name: .long, help: "Navigation toolbar size: regular or compact (smaller). Default regular.")

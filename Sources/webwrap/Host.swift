@@ -190,7 +190,7 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         NSApp.mainMenu = buildMainMenu(appName: title)
 
         // Optional navigation toolbar (opt-in via WebWrapToolbar, overridable in Settings).
-        // Off keeps the chromeless look; on shows back/forward/reload in the title bar.
+        // Off keeps the chromeless look; on shows back/forward/reload/home in the title bar.
         currentToolbarStyle = HostSettings.toolbarStyle(store: settingsStore,
                                                         bakedDefault: bakedToolbarStyle)
         if HostSettings.toolbar(store: settingsStore, bakedDefault: bakedToolbar) {
@@ -277,6 +277,11 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         let viewMenu = NSMenu(title: "View")
         viewItem.submenu = viewMenu
         viewMenu.addItem(withTitle: "Reload", action: #selector(reloadPage(_:)), keyEquivalent: "r").target = self
+        // Home reloads the app's start page — the escape hatch when the site navigates
+        // itself somewhere unrecoverable (e.g. a "you have been signed out" dead end).
+        let home = viewMenu.addItem(withTitle: "Home", action: #selector(goHome(_:)), keyEquivalent: "h")
+        home.keyEquivalentModifierMask = [.command, .shift]
+        home.target = self
         viewMenu.addItem(.separator())
         viewMenu.addItem(withTitle: "Back", action: #selector(goBack(_:)), keyEquivalent: "[").target = self
         viewMenu.addItem(withTitle: "Forward", action: #selector(goForward(_:)), keyEquivalent: "]").target = self
@@ -307,6 +312,7 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     private static let backItemID = NSToolbarItem.Identifier("WebWrapBack")
     private static let forwardItemID = NSToolbarItem.Identifier("WebWrapForward")
     private static let reloadItemID = NSToolbarItem.Identifier("WebWrapReload")
+    private static let homeItemID = NSToolbarItem.Identifier("WebWrapHome")
 
     private static let toolbarButtons: [ToolbarButton] = [
         ToolbarButton(id: backItemID, symbol: "chevron.backward",
@@ -315,9 +321,11 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
                       fallbackTitle: "Forward", action: #selector(goForward(_:))),
         ToolbarButton(id: reloadItemID, symbol: "arrow.clockwise",
                       fallbackTitle: "Reload", action: #selector(reloadPage(_:))),
+        ToolbarButton(id: homeItemID, symbol: "house",
+                      fallbackTitle: "Home", action: #selector(goHome(_:))),
     ]
 
-    /// Adds a navigation toolbar (back/forward/reload) to the window and wires the
+    /// Adds a navigation toolbar (back/forward/reload/home) to the window and wires the
     /// back/forward buttons to enable/disable as the web view's history changes.
     private func installToolbar() {
         let toolbar = NSToolbar(identifier: "WebWrapNavigationToolbar")
@@ -421,11 +429,12 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [Self.backItemID, Self.forwardItemID, .space, Self.reloadItemID]
+        [Self.backItemID, Self.forwardItemID, .space, Self.reloadItemID, Self.homeItemID]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [Self.backItemID, Self.forwardItemID, Self.reloadItemID, .space, .flexibleSpace]
+        [Self.backItemID, Self.forwardItemID, Self.reloadItemID, Self.homeItemID,
+         .space, .flexibleSpace]
     }
 
     @objc private func showAbout(_ sender: Any?) {
@@ -450,6 +459,7 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     @objc private func reloadPage(_ sender: Any?) { webView.reload() }
     @objc private func goBack(_ sender: Any?) { webView.goBack() }
     @objc private func goForward(_ sender: Any?) { webView.goForward() }
+    @objc private func goHome(_ sender: Any?) { loadIntendedURL() }
 
     /// Copies the URL of the page currently shown to the system pasteboard. No-op (and
     /// disabled in the menu) when nothing is loaded.

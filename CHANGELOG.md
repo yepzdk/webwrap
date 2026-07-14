@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `--user-agent` on `create`/`update` (and a selector in the in-app Settings) sets the
   browser identity: `safari`, `chrome`, `edge`, or a custom UA string. `update
   --no-user-agent` resets to the default. (#60)
+- **Home** action (View → Home, ⌘⇧H, and a toolbar button) that returns to the app's
+  start page — a one-click escape from dead-end pages like "you have been signed
+  out" screens. (#64)
 
 ### Changed
 - Generated apps now identify as Safari by default (WKWebView's stock user agent lacks
