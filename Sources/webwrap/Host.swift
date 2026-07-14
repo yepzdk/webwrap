@@ -918,14 +918,57 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
                                          allowAnyDomain: allowAnyDomain)
     }
 
-    // Handle target=_blank / window.open by loading in the same view rather than
-    // silently dropping the navigation.
+    // MARK: - Navigation policy (external links)
+
+    /// Off-site link clicks open in the system default browser; non-web schemes
+    /// (mailto:, msteams:, …) go to their owning app. Everything else — same-site,
+    /// SSO round-trips, redirects, form posts, subframe loads, and the app's own
+    /// about:/data: content — loads in the web view. The decision itself is the pure
+    /// `HostNavigation.policy`.
+    func webView(_ webView: WKWebView,
+                 decidePolicyFor navigationAction: WKNavigationAction,
+                 decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        guard let url = navigationAction.request.url else {
+            decisionHandler(.allow)
+            return
+        }
+        let policy = HostNavigation.policy(
+            for: url,
+            // A nil targetFrame is a new-window request; treat it as main-frame (the
+            // same-view load it turns into via createWebViewWith replaces the page).
+            isMainFrame: navigationAction.targetFrame?.isMainFrame ?? true,
+            isLinkClick: navigationAction.navigationType == .linkActivated,
+            targetsNewWindow: false,
+            appHost: appHost,
+            allowAnyDomain: allowAnyDomain)
+        if policy == .externalBrowser {
+            NSWorkspace.shared.open(url)
+            decisionHandler(.cancel)
+        } else {
+            decisionHandler(.allow)
+        }
+    }
+
+    // Handle target=_blank / window.open: off-site requests open in the system default
+    // browser; same-site (and SSO) ones load in the same view rather than being
+    // silently dropped.
     func webView(_ webView: WKWebView,
                  createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction,
                  windowFeatures: WKWindowFeatures) -> WKWebView? {
         if let url = navigationAction.request.url {
-            webView.load(URLRequest(url: url))
+            switch HostNavigation.policy(
+                for: url,
+                isMainFrame: true,
+                isLinkClick: navigationAction.navigationType == .linkActivated,
+                targetsNewWindow: true,
+                appHost: appHost,
+                allowAnyDomain: allowAnyDomain) {
+            case .externalBrowser:
+                NSWorkspace.shared.open(url)
+            case .inApp:
+                webView.load(URLRequest(url: url))
+            }
         }
         return nil
     }
@@ -1055,10 +1098,63 @@ enum HostNavigation {
         // Only ever navigate to real web URLs; the caller passes nil for non-http(s).
         guard let incomingHost = incomingHost?.lowercased(), !incomingHost.isEmpty else { return false }
         if allowAnyDomain { return true }
-        guard let appHost = appHost?.lowercased(), !appHost.isEmpty else { return false }
-        // Exact match, or a subdomain: "github.com" accepts "www.github.com" but the
-        // dot-boundary check rejects "notgithub.com".
-        return incomingHost == appHost || incomingHost.hasSuffix("." + appHost)
+        return isSameSite(host: incomingHost, appHost: appHost)
+    }
+
+    /// Whether `host` belongs to the app's own site: an exact match of `appHost` or a
+    /// subdomain of it — "github.com" accepts "www.github.com" but the dot-boundary
+    /// check rejects "notgithub.com".
+    static func isSameSite(host: String?, appHost: String?) -> Bool {
+        guard let host = host?.lowercased(), !host.isEmpty,
+              let appHost = appHost?.lowercased(), !appHost.isEmpty else { return false }
+        return host == appHost || host.hasSuffix("." + appHost)
+    }
+
+    /// Where a navigation triggered by page content should happen: inside the app's
+    /// window, or handed to the system (the default browser for web URLs, the owning
+    /// app for other schemes like mailto:).
+    enum NavigationPolicy: Equatable {
+        case inApp
+        case externalBrowser
+    }
+
+    /// Off-site hosts that must stay in-app anyway: shared sign-in services the wrapped
+    /// site round-trips through. Opening these externally would strand the login in the
+    /// browser instead of the app's own data store. Matched with the `isSameSite`
+    /// subdomain rule, so e.g. "eur.okta.com" is covered by "okta.com".
+    static let ssoHosts = [
+        "login.microsoftonline.com", "login.live.com", "login.microsoft.com",
+        "accounts.google.com", "appleid.apple.com", "github.com",
+        "auth0.com", "okta.com",
+    ]
+
+    /// Decides where a content-triggered navigation goes. The rules, in order:
+    ///
+    /// 1. `about:`/`data:`/`blob:` — content the app itself loads (the offline fallback
+    ///    page, blank popups, generated downloads) — always stays in the web view.
+    /// 2. Other non-web schemes (mailto:, msteams:, …) can't render in the web view and
+    ///    were previously silent dead-ends; hand them to macOS.
+    /// 3. Apps that accept any domain (`--open-any-url`) browse everything in-window.
+    /// 4. Same-site and SSO-host navigations stay in-app.
+    /// 5. Off-site jumps the user initiated — a new-window request (`target=_blank` /
+    ///    `window.open`) or a main-frame link click — open in the default browser.
+    /// 6. Everything else (server redirects, form posts — i.e. OAuth chains — and
+    ///    subframe loads) stays in-app.
+    static func policy(for url: URL, isMainFrame: Bool, isLinkClick: Bool,
+                       targetsNewWindow: Bool, appHost: String?,
+                       allowAnyDomain: Bool) -> NavigationPolicy {
+        if let scheme = url.scheme?.lowercased(),
+           ["about", "data", "blob"].contains(scheme) {
+            return .inApp
+        }
+        guard isWebURL(url) else { return .externalBrowser }
+        if allowAnyDomain { return .inApp }
+        if isSameSite(host: url.host, appHost: appHost) { return .inApp }
+        if ssoHosts.contains(where: { isSameSite(host: url.host, appHost: $0) }) {
+            return .inApp
+        }
+        if targetsNewWindow || (isLinkClick && isMainFrame) { return .externalBrowser }
+        return .inApp
     }
 
     /// Whether `url` is an http/https URL we'd consider navigating to. Used to filter the

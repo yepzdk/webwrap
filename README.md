@@ -142,6 +142,10 @@ webwrap create -u https://github.com -n "GitHub" --handle-urls
 
 It's **off by default** so apps don't claim `http`/`https` system-wide unless you opt in. By default only **same-site** URLs are accepted (a GitHub app loads `github.com` links and ignores `example.com`); pass `--open-any-url` to let the app navigate to any URL it's handed. Rejected off-domain URLs are simply ignored — the app stays on its current page.
 
+### Links that leave the site
+
+Links you click that go **off-site** (and `target=_blank` popups) open in your **default browser** instead of navigating the app window — so a news link in an Outlook email doesn't strand the app on some article. Sign-in flows are unaffected: common SSO hosts (`login.microsoftonline.com`, `accounts.google.com`, …) and all automatic redirects stay inside the app, so logins land in the app's own session. `mailto:` and other app-scheme links are handed to macOS. Apps created with `--open-any-url` opt out and browse everything in-window.
+
 ## Listing your apps
 
 `webwrap list` shows the wrapped apps installed on your Mac and the URL each points at — handy when Finder can't tell a webwrap app apart from any other:

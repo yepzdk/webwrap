@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- Links that leave the wrapped site (clicks and `target=_blank`) now open in the system
+  default browser instead of navigating the app window. Sign-in flows stay in-app via a
+  built-in SSO-host exception list, `mailto:`-style links are handed to macOS, and
+  `--open-any-url` apps keep browsing everything in-window. (#68)
+
 ## [0.6.0] - 2026-07-14
 
 ### Added
