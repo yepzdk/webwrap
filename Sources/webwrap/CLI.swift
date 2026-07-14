@@ -71,6 +71,10 @@ struct Update: ParsableCommand {
           help: "With --handle-urls, also accept off-domain URLs (default: only same-site). If omitted, the current setting is kept.")
     var openAnyUrl: Bool?
 
+    @Flag(name: .long, inversion: .prefixedNo,
+          help: "Open links that leave the site in the default browser. If omitted, the current setting is kept.")
+    var externalLinks: Bool?
+
     @Option(name: .long, help: "Set the window background color (hex, e.g. #1a73e8). If omitted, it follows the new --url's manifest, else the current setting is kept.")
     var backgroundColor: String?
 
@@ -128,7 +132,8 @@ struct Update: ParsableCommand {
         let anyOptionFlag = url != nil || name != nil || icon != nil || width != nil
             || height != nil || toolbar != nil || toolbarStyleFlag != nil
             || progressBar != nil || handleUrls != nil
-            || openAnyUrl != nil || backgroundColor != nil || noBackgroundColor
+            || openAnyUrl != nil || externalLinks != nil
+            || backgroundColor != nil || noBackgroundColor
             || userAgent != nil || noUserAgent
             || sign != nil || noSign || notarize
         let mode = OptionDefaults.updateMode(isInteractive: Prompt.isInteractive,
@@ -175,7 +180,8 @@ struct Update: ParsableCommand {
                 userAgent: .some(seed.userAgent),
                 handleURLs: seed.handleURLs,
                 openAnyURL: OptionDefaults.resolveOpenAnyURL(handleURLs: seed.handleURLs,
-                                                             openAnyURL: seed.openAnyURL))
+                                                             openAnyURL: seed.openAnyURL),
+                externalLinks: seed.externalLinks)
             iconOverride = seed.iconPath
             buildNoSign = seed.noSign
             buildSign = seed.signIdentity
@@ -203,7 +209,8 @@ struct Update: ParsableCommand {
                                        backgroundColor: background,
                                        userAgent: OptionDefaults.resolveUpdateUserAgent(
                                            explicit: userAgent, clear: noUserAgent),
-                                       handleURLs: effectiveHandleURLs, openAnyURL: openAnyUrl)
+                                       handleURLs: effectiveHandleURLs, openAnyURL: openAnyUrl,
+                                       externalLinks: externalLinks)
         }
 
         try Create.validateSigning(noSign: buildNoSign, sign: buildSign,
@@ -233,6 +240,9 @@ struct Update: ParsableCommand {
         }
         if merged.openAnyURL != existing.openAnyURL {
             changes.append("Open any URL → \(merged.openAnyURL ? "on" : "off")")
+        }
+        if merged.externalLinks != existing.externalLinks {
+            changes.append("External links → \(merged.externalLinks ? "default browser" : "in-window")")
         }
         if merged.backgroundColor != existing.backgroundColor {
             changes.append("Background → \(merged.backgroundColor ?? "default")")
@@ -292,7 +302,8 @@ struct Update: ParsableCommand {
             backgroundColor: merged.backgroundColor,
             userAgent: merged.userAgent,
             handleURLs: merged.handleURLs,
-            openAnyURL: merged.openAnyURL
+            openAnyURL: merged.openAnyURL,
+            externalLinks: merged.externalLinks
         )
         let newPath = try builder.build()
 
@@ -357,6 +368,10 @@ struct Create: ParsableCommand {
 
     @Flag(name: .long, help: "With --handle-urls, also accept off-domain URLs (default: only same-site).")
     var openAnyUrl: Bool = false
+
+    @Flag(name: .long, inversion: .prefixedNo,
+          help: "Open links that leave the site in the default browser (sign-in flows stay in-app). On by default.")
+    var externalLinks: Bool = true
 
     @Option(name: .long, help: "Hex color painted behind the page on launch (e.g. #1a73e8). Overrides the site manifest's color.")
     var backgroundColor: String?
@@ -430,6 +445,7 @@ struct Create: ParsableCommand {
             toolbarStyle: ToolbarStyle.parse(toolbarSize),
             progressBar: progressBar,
             handleURLs: effectiveHandleURLs, openAnyURL: openAnyUrl,
+            externalLinks: externalLinks,
             iconPath: icon, manifestBackground: manifest.launchBackgroundColor,
             explicitBackground: backgroundColor, userAgent: userAgent,
             noSign: noSign, signIdentity: sign, notarize: notarize, notaryProfile: notaryProfile)
@@ -502,6 +518,7 @@ struct Create: ParsableCommand {
           Toolbar:     \(seed.toolbar ? "yes (\(seed.toolbarStyle.rawValue))" : "no")
           Progress:    \(seed.progressBar ? "yes" : "no")
           Handle URLs: \(handleURLsSummary(seed: seed))
+          Ext. links:  \(seed.externalLinks ? "default browser" : "in-window")
           Background:  \(seed.backgroundColor ?? "default")
           User agent:  \(seed.userAgent ?? "safari (default)")
           Signing:     \(Self.signingDescription(noSign: seed.noSign, sign: seed.signIdentity, notarize: seed.notarize))
@@ -563,7 +580,8 @@ struct Create: ParsableCommand {
             userAgent: seed.userAgent,
             handleURLs: seed.handleURLs,
             openAnyURL: OptionDefaults.resolveOpenAnyURL(handleURLs: seed.handleURLs,
-                                                         openAnyURL: seed.openAnyURL)
+                                                         openAnyURL: seed.openAnyURL),
+            externalLinks: seed.externalLinks
         )
         let appPath = try builder.build()
         print("✓ Created \(appPath)")

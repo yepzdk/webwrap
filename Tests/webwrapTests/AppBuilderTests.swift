@@ -38,6 +38,7 @@ final class InfoPlistTests: XCTestCase {
                        userAgent: String? = nil,
                        handleURLs: Bool = false,
                        openAnyURL: Bool = false,
+                       externalLinks: Bool = true,
                        creatorVersion: String = "0.3.0") -> String {
         AppBuilder.makeInfoPlist(
             name: name, url: url, bundleId: bundleId,
@@ -47,7 +48,8 @@ final class InfoPlistTests: XCTestCase {
             progressBar: progressBar,
             backgroundColor: backgroundColor, userAgent: userAgent,
             handleURLs: handleURLs,
-            openAnyURL: openAnyURL, creatorVersion: creatorVersion)
+            openAnyURL: openAnyURL, externalLinks: externalLinks,
+            creatorVersion: creatorVersion)
     }
 
     func testContainsExpectedKeysAndValues() {
@@ -87,6 +89,12 @@ final class InfoPlistTests: XCTestCase {
         let off = plist(handleURLs: false, openAnyURL: false)
         XCTAssertTrue(off.contains("<key>WebWrapHandleURLs</key>\n    <string>0</string>"))
         XCTAssertTrue(off.contains("<key>WebWrapOpenAnyURL</key>\n    <string>0</string>"))
+    }
+
+    func testExternalLinksKeyReflectsFlag() {
+        // Default (on) bakes "1"; --no-external-links bakes "0".
+        XCTAssertTrue(plist().contains("<key>WebWrapExternalLinks</key>\n    <string>1</string>"))
+        XCTAssertTrue(plist(externalLinks: false).contains("<key>WebWrapExternalLinks</key>\n    <string>0</string>"))
     }
 
     func testCFBundleURLTypesOnlyWhenHandlingURLs() {

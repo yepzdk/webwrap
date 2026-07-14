@@ -31,6 +31,9 @@ struct AppConfig: Equatable {
     /// When `handleURLs` is on, whether off-domain incoming URLs are accepted too.
     /// `--open-any-url`.
     var openAnyURL: Bool
+    /// Whether links that leave the site open in the system default browser. On by
+    /// default; `--no-external-links` opts out.
+    var externalLinks: Bool
 
     /// Parses an existing app's `Info.plist` bytes into an `AppConfig`, or nil if the
     /// bundle isn't a webwrap app (no `WebWrapURL` marker) or can't be parsed. Pure.
@@ -56,13 +59,17 @@ struct AppConfig: Equatable {
             .flatMap { $0.isEmpty ? nil : $0 }
         let handleURLs = plistBool(dict["WebWrapHandleURLs"])
         let openAnyURL = plistBool(dict["WebWrapOpenAnyURL"])
+        // Default-ON bool (unlike plistBool): absent — an app created before the
+        // option existed — reads as on, so older apps adopt the default behavior.
+        let externalLinks = (dict["WebWrapExternalLinks"] as? String).map { $0 == "1" } ?? true
         return AppConfig(url: url, name: name, bundleId: bundleId,
                          width: width, height: height, showToolbar: showToolbar,
                          toolbarStyle: toolbarStyle,
                          progressBar: progressBar,
                          backgroundColor: backgroundColor,
                          userAgent: userAgent,
-                         handleURLs: handleURLs, openAnyURL: openAnyURL)
+                         handleURLs: handleURLs, openAnyURL: openAnyURL,
+                         externalLinks: externalLinks)
     }
 
     /// Reads a `WebWrap*` boolean plist value, stored as the string "1"/"0". Absent or
@@ -91,7 +98,8 @@ struct AppConfig: Equatable {
                   backgroundColor: String?? = nil,
                   userAgent: String?? = nil,
                   handleURLs: Bool? = nil,
-                  openAnyURL: Bool? = nil) -> AppConfig {
+                  openAnyURL: Bool? = nil,
+                  externalLinks: Bool? = nil) -> AppConfig {
         AppConfig(
             url: url ?? self.url,
             name: name ?? self.name,
@@ -105,6 +113,7 @@ struct AppConfig: Equatable {
             backgroundColor: backgroundColor ?? self.backgroundColor,
             userAgent: userAgent ?? self.userAgent,
             handleURLs: handleURLs ?? self.handleURLs,
-            openAnyURL: openAnyURL ?? self.openAnyURL)
+            openAnyURL: openAnyURL ?? self.openAnyURL,
+            externalLinks: externalLinks ?? self.externalLinks)
     }
 }

@@ -87,6 +87,7 @@ Summary
   Toolbar:     no
   Progress:    no
   Handle URLs: no
+  Ext. links:  default browser
   Background:  default
   User agent:  safari (default)
   Signing:     ad-hoc
@@ -113,6 +114,7 @@ Passing both `--url` and `--name` skips the prompts entirely and builds straight
 | `--progress-bar` | Show a thin page-load progress line at the top of the window | off |
 | `--handle-urls` | Register as an http/https handler and open URLs the app is launched with (e.g. from Choosy) | off |
 | `--open-any-url` | With `--handle-urls`, also accept off-domain URLs (default: only same-site) | off |
+| `--external-links` / `--no-external-links` | Open links that leave the site in the default browser | on |
 | `--background-color` | Hex color painted behind the page on launch (e.g. `#1a73e8`); overrides the site manifest's color | manifest |
 | `--user-agent` | Browser identity the app reports: `safari`, `chrome`, `edge`, or a full custom UA string. Apps identify as Safari by default, which fixes most "browser not supported" pages | `safari` |
 | `--force` | Overwrite an existing `.app` | off |
@@ -141,6 +143,12 @@ webwrap create -u https://github.com -n "GitHub" --handle-urls
 ```
 
 It's **off by default** so apps don't claim `http`/`https` system-wide unless you opt in. By default only **same-site** URLs are accepted (a GitHub app loads `github.com` links and ignores `example.com`); pass `--open-any-url` to let the app navigate to any URL it's handed. Rejected off-domain URLs are simply ignored — the app stays on its current page.
+
+### Links that leave the site
+
+By default, links you click that go **off-site** (and `target=_blank` popups) open in your **default browser** instead of navigating the app window — so a news link in an Outlook email doesn't strand the app on some article. Sign-in flows are unaffected: common SSO hosts (`login.microsoftonline.com`, `accounts.google.com`, …) and all automatic redirects stay inside the app, so logins land in the app's own session. `mailto:` and other app-scheme links are handed to macOS.
+
+It's a per-app choice: answer the prompt in interactive mode, or pass `--no-external-links` to keep everything in-window. Apps created with `--open-any-url` always browse in-window (they explicitly handle any domain).
 
 ## Listing your apps
 
@@ -182,6 +190,7 @@ Run with just the app path on a terminal and `update` walks the same prompts as 
 | `--progress-bar` / `--no-progress-bar` | Show or hide the page-load progress line (current setting kept if omitted) |
 | `--handle-urls` / `--no-handle-urls` | Turn URL handling on or off (current setting kept if omitted) |
 | `--open-any-url` / `--no-open-any-url` | Allow or restrict off-domain URLs (current setting kept if omitted) |
+| `--external-links` / `--no-external-links` | Open off-site links in the default browser, or in the window (current setting kept if omitted) |
 | `--background-color` / `--no-background-color` | Set or clear the window background color. If omitted, it follows the new `--url`'s manifest color when the URL changes, otherwise the current setting is kept |
 | `--user-agent` / `--no-user-agent` | Set the browser identity (`safari`/`chrome`/`edge` or a custom UA string) or reset it to the Safari default (current setting kept if omitted) |
 | `--sign`, `--notarize`, `--notary-profile`, `--no-sign` | Signing, same as `create` |

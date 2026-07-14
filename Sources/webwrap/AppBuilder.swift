@@ -47,6 +47,9 @@ struct AppBuilder {
     /// When `handleURLs` is on, whether to accept off-domain incoming URLs too. When
     /// false, only same-site URLs are loaded. (`--open-any-url`.)
     var openAnyURL: Bool = false
+    /// Whether links that leave the site open in the system default browser. On by
+    /// default. (`--no-external-links` opts out.)
+    var externalLinks: Bool = true
 
     private let fm = FileManager.default
 
@@ -143,6 +146,7 @@ struct AppBuilder {
             userAgent: userAgent,
             handleURLs: handleURLs,
             openAnyURL: openAnyURL,
+            externalLinks: externalLinks,
             creatorVersion: WebWrap.configuration.version
         )
     }
@@ -164,6 +168,7 @@ struct AppBuilder {
                               userAgent: String? = nil,
                               handleURLs: Bool = false,
                               openAnyURL: Bool = false,
+                              externalLinks: Bool = true,
                               creatorVersion: String) -> String {
         let escapedName = xmlEscape(name)
         let escapedURL = xmlEscape(url)
@@ -263,6 +268,8 @@ struct AppBuilder {
             <string>\(handleURLs ? "1" : "0")</string>
             <key>WebWrapOpenAnyURL</key>
             <string>\(openAnyURL ? "1" : "0")</string>
+            <key>WebWrapExternalLinks</key>
+            <string>\(externalLinks ? "1" : "0")</string>
             \(backgroundColorEntry)\(userAgentEntry)\(urlTypesEntry)<key>WebWrapCreatorVersion</key>
             <string>\(escapedCreator)</string>
         </dict>

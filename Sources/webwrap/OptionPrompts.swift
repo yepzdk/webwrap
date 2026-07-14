@@ -12,6 +12,8 @@ struct OptionSeed: Equatable {
     var progressBar: Bool
     var handleURLs: Bool
     var openAnyURL: Bool
+    /// Whether links that leave the site open in the system default browser.
+    var externalLinks: Bool
     /// Explicit icon path, or nil meaning "resolve from site" (create) / "keep existing" (update).
     var iconPath: String?
     /// CSS background color, or nil meaning "none / from manifest".
@@ -43,7 +45,7 @@ enum OptionDefaults {
     /// manifest's color when the site provided one.
     static func forCreate(width: Int, height: Int, toolbar: Bool, toolbarStyle: ToolbarStyle,
                           progressBar: Bool,
-                          handleURLs: Bool, openAnyURL: Bool,
+                          handleURLs: Bool, openAnyURL: Bool, externalLinks: Bool,
                           iconPath: String?, manifestBackground: String?,
                           explicitBackground: String?, userAgent: String?,
                           noSign: Bool, signIdentity: String?,
@@ -51,7 +53,7 @@ enum OptionDefaults {
         OptionSeed(
             width: width, height: height, toolbar: toolbar, toolbarStyle: toolbarStyle,
             progressBar: progressBar,
-            handleURLs: handleURLs, openAnyURL: openAnyURL,
+            handleURLs: handleURLs, openAnyURL: openAnyURL, externalLinks: externalLinks,
             iconPath: iconPath, backgroundColor: explicitBackground ?? manifestBackground,
             userAgent: userAgent,
             noSign: noSign, signIdentity: signIdentity,
@@ -67,6 +69,7 @@ enum OptionDefaults {
             toolbarStyle: existing.toolbarStyle,
             progressBar: existing.progressBar,
             handleURLs: existing.handleURLs, openAnyURL: existing.openAnyURL,
+            externalLinks: existing.externalLinks,
             iconPath: nil, backgroundColor: existing.backgroundColor,
             userAgent: existing.userAgent,
             noSign: false, signIdentity: nil, notarize: false, notaryProfile: nil)
@@ -175,9 +178,14 @@ func promptForOptions(seed: OptionSeed, context: PromptContext) -> OptionSeed? {
         "Show page-load progress line?", defaultYes: seed.progressBar) else { return nil }
     result.progressBar = progressBar
 
-    // Step 6 — URL handling, and the conditional off-domain follow-up.
+    // Step 6 — URL handling: links leaving the app, incoming URLs, and the conditional
+    // off-domain follow-up.
     Prompt.step(6, of: total, title: "URL handling",
-                help: "Register the app as an http/https handler so links opened\nfrom other apps (e.g. Choosy) load in it. Off by default.")
+                help: "How URLs flow out of and into the app: links that leave the\nsite can open in your default browser, and the app can register\nas an http/https handler so links from other apps (e.g. Choosy)\nload in it.")
+    guard let externalLinks = Prompt.confirmOrCancel(
+        "Open links that leave the site in your default browser?",
+        defaultYes: seed.externalLinks) else { return nil }
+    result.externalLinks = externalLinks
     guard let handleURLs = Prompt.confirmOrCancel(
         "Open URLs the app is launched with?", defaultYes: seed.handleURLs) else { return nil }
     result.handleURLs = handleURLs
