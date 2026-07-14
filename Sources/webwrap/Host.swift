@@ -49,6 +49,9 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     /// Whether the app accepts off-domain incoming URLs (from `--open-any-url`). When
     /// false, only same-site URLs are loaded; off-domain ones are ignored.
     private var allowAnyDomain = false
+    /// Whether links that leave the site open in the system default browser (the
+    /// default; `--no-external-links` bakes this off).
+    private var externalLinks = true
     /// An incoming URL (from `open -a` / Choosy / the GetURL Apple Event) received
     /// before the web view exists at cold launch. `applicationDidFinishLaunching` loads
     /// this instead of the baked-in home page when set.
@@ -123,6 +126,8 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         // so a GetURL Apple Event arriving before didFinishLaunching is judged correctly.
         appHost = (info("WebWrapURL")).flatMap { URL(string: $0)?.host }
         allowAnyDomain = info("WebWrapOpenAnyURL") == "1"
+        // Default-ON: an absent key (apps created before the option) reads as on.
+        externalLinks = info("WebWrapExternalLinks") != "0"
 
         // Register for the GetURL Apple Event (the older routing path some openers and
         // Choosy configurations use). Runs before didFinishLaunching, so a URL passed at
@@ -940,7 +945,8 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
             isLinkClick: navigationAction.navigationType == .linkActivated,
             targetsNewWindow: false,
             appHost: appHost,
-            allowAnyDomain: allowAnyDomain)
+            allowAnyDomain: allowAnyDomain,
+            externalLinks: externalLinks)
         if policy == .externalBrowser {
             NSWorkspace.shared.open(url)
             decisionHandler(.cancel)
@@ -963,7 +969,8 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
                 isLinkClick: navigationAction.navigationType == .linkActivated,
                 targetsNewWindow: true,
                 appHost: appHost,
-                allowAnyDomain: allowAnyDomain) {
+                allowAnyDomain: allowAnyDomain,
+                externalLinks: externalLinks) {
             case .externalBrowser:
                 NSWorkspace.shared.open(url)
             case .inApp:
@@ -1134,7 +1141,8 @@ enum HostNavigation {
     ///    page, blank popups, generated downloads) — always stays in the web view.
     /// 2. Other non-web schemes (mailto:, msteams:, …) can't render in the web view and
     ///    were previously silent dead-ends; hand them to macOS.
-    /// 3. Apps that accept any domain (`--open-any-url`) browse everything in-window.
+    /// 3. Apps with external links baked off (`--no-external-links`), and apps that
+    ///    accept any domain (`--open-any-url`), browse everything in-window.
     /// 4. Same-site and SSO-host navigations stay in-app.
     /// 5. Off-site jumps the user initiated — a new-window request (`target=_blank` /
     ///    `window.open`) or a main-frame link click — open in the default browser.
@@ -1142,13 +1150,13 @@ enum HostNavigation {
     ///    subframe loads) stays in-app.
     static func policy(for url: URL, isMainFrame: Bool, isLinkClick: Bool,
                        targetsNewWindow: Bool, appHost: String?,
-                       allowAnyDomain: Bool) -> NavigationPolicy {
+                       allowAnyDomain: Bool, externalLinks: Bool = true) -> NavigationPolicy {
         if let scheme = url.scheme?.lowercased(),
            ["about", "data", "blob"].contains(scheme) {
             return .inApp
         }
         guard isWebURL(url) else { return .externalBrowser }
-        if allowAnyDomain { return .inApp }
+        if allowAnyDomain || !externalLinks { return .inApp }
         if isSameSite(host: url.host, appHost: appHost) { return .inApp }
         if ssoHosts.contains(where: { isSameSite(host: url.host, appHost: $0) }) {
             return .inApp

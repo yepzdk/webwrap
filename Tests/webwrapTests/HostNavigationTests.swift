@@ -70,10 +70,12 @@ final class NavigationPolicyTests: XCTestCase {
     /// Shorthand: policy for a wrapped outlook.office.com app without --open-any-url.
     private func policy(_ url: String, isMainFrame: Bool = true, isLinkClick: Bool = false,
                         targetsNewWindow: Bool = false, appHost: String? = "outlook.office.com",
-                        allowAnyDomain: Bool = false) -> HostNavigation.NavigationPolicy {
+                        allowAnyDomain: Bool = false,
+                        externalLinks: Bool = true) -> HostNavigation.NavigationPolicy {
         HostNavigation.policy(for: URL(string: url)!, isMainFrame: isMainFrame,
                               isLinkClick: isLinkClick, targetsNewWindow: targetsNewWindow,
-                              appHost: appHost, allowAnyDomain: allowAnyDomain)
+                              appHost: appHost, allowAnyDomain: allowAnyDomain,
+                              externalLinks: externalLinks)
     }
 
     func testOffSiteNewWindowOpensExternally() {
@@ -139,6 +141,18 @@ final class NavigationPolicyTests: XCTestCase {
         XCTAssertEqual(policy("about:blank"), .inApp)
         XCTAssertEqual(policy("data:text/html,hi"), .inApp)
         XCTAssertEqual(policy("blob:https://outlook.office.com/uuid"), .inApp)
+    }
+
+    func testExternalLinksOffKeepsWebLinksInApp() {
+        // --no-external-links: the pre-option behavior — everything web in-window.
+        XCTAssertEqual(policy("https://news.example.com/story", isLinkClick: true,
+                              externalLinks: false),
+                       .inApp)
+        XCTAssertEqual(policy("https://news.example.com/story", targetsNewWindow: true,
+                              externalLinks: false),
+                       .inApp)
+        // mailto: can never render in the web view, so it still goes to the system.
+        XCTAssertEqual(policy("mailto:a@b.com", externalLinks: false), .externalBrowser)
     }
 
     func testAllowAnyDomainBrowsesInWindow() {

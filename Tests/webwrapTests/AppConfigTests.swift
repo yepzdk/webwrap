@@ -24,6 +24,7 @@ final class AppConfigParseTests: XCTestCase {
             "WebWrapHandleURLs": "1",
             "WebWrapOpenAnyURL": "1",
             "WebWrapProgressBar": "1",
+            "WebWrapExternalLinks": "0",
         ])
         XCTAssertEqual(AppConfig.parse(plistData: data),
                        AppConfig(url: "https://outlook.office.com", name: "Outlook",
@@ -31,7 +32,20 @@ final class AppConfigParseTests: XCTestCase {
                                  showToolbar: true, toolbarStyle: .compact,
                                  progressBar: true, backgroundColor: "#1a73e8",
                                  userAgent: "edge",
-                                 handleURLs: true, openAnyURL: true))
+                                 handleURLs: true, openAnyURL: true,
+                                 externalLinks: false))
+    }
+
+    func testExternalLinksDefaultsOnWhenAbsent() {
+        // Apps created before the option have no key — they adopt the default (on).
+        let cfg = AppConfig.parse(plistData: plist(["WebWrapURL": "https://x.test"]))
+        XCTAssertEqual(cfg?.externalLinks, true)
+    }
+
+    func testExternalLinksZeroParsesAsOff() {
+        let cfg = AppConfig.parse(plistData: plist([
+            "WebWrapURL": "https://x.test", "WebWrapExternalLinks": "0"]))
+        XCTAssertEqual(cfg?.externalLinks, false)
     }
 
     func testURLHandlingDefaultsOffWhenAbsent() {
@@ -114,7 +128,8 @@ final class AppConfigApplyTests: XCTestCase {
                                  showToolbar: false, toolbarStyle: .regular,
                                  progressBar: false, backgroundColor: "#123456",
                                  userAgent: "chrome",
-                                 handleURLs: false, openAnyURL: false)
+                                 handleURLs: false, openAnyURL: false,
+                                 externalLinks: true)
 
     func testNoOverridesCarriesEverything() {
         XCTAssertEqual(base.applying(), base)
@@ -200,5 +215,12 @@ final class AppConfigApplyTests: XCTestCase {
         let after = on.applying(url: "https://new.test")
         XCTAssertTrue(after.handleURLs)
         XCTAssertTrue(after.openAnyURL)
+    }
+
+    func testExternalLinksOverrideTogglesAndCarriesOver() {
+        XCTAssertFalse(base.applying(externalLinks: false).externalLinks)
+        // A nil override (flag omitted on `update`) keeps the existing setting.
+        let off = base.applying(externalLinks: false)
+        XCTAssertFalse(off.applying(url: "https://new.test").externalLinks)
     }
 }
