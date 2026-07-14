@@ -5,7 +5,7 @@ struct WebWrap: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "webwrap",
         abstract: "Wrap any website into a standalone macOS .app.",
-        version: "0.5.0",
+        version: "0.6.0",
         subcommands: [Create.self, List.self, Update.self],
         defaultSubcommand: Create.self
     )
