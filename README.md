@@ -67,7 +67,7 @@ Resolving icon…
 Name [Outlook]:
 
 [Step 4/10] Toolbar
-  A back/forward/reload bar in the title area.
+  A back/forward/reload/home bar in the title area.
   Off keeps the chromeless look.
 Show navigation toolbar? [y/N]:
 
@@ -108,7 +108,7 @@ Passing both `--url` and `--name` skips the prompts entirely and builds straight
 | `--icon` | Path to a `.png` or `.icns` icon | resolved from site |
 | `--width` | Initial window width (points) | `1200` |
 | `--height` | Initial window height (points) | `800` |
-| `--toolbar` | Show a navigation toolbar (back/forward/reload) | off |
+| `--toolbar` | Show a navigation toolbar (back/forward/reload/home) | off |
 | `--toolbar-size` | Navigation toolbar size: `regular` or `compact` (smaller) | `regular` |
 | `--progress-bar` | Show a thin page-load progress line at the top of the window | off |
 | `--handle-urls` | Register as an http/https handler and open URLs the app is launched with (e.g. from Choosy) | off |
