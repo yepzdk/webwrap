@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-14
+
 ### Added
 - Generated apps now have an in-app **Settings** window (⌘,) to toggle the navigation
   toolbar, the page-load progress bar, and the window background color. Changes apply
@@ -145,7 +147,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Test suite (`swift test`) covering `AppBuilder`'s pure helpers (slug, bundle id,
   `Info.plist` generation, XML escaping) plus the icon-resolution and CLI helpers.
 
-[Unreleased]: https://github.com/yepzdk/webwrap/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/yepzdk/webwrap/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/yepzdk/webwrap/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/yepzdk/webwrap/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/yepzdk/webwrap/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/yepzdk/webwrap/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/yepzdk/webwrap/compare/v0.1.0...v0.2.0
