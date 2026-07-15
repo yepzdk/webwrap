@@ -68,6 +68,11 @@ final class AppRegistryRenderTests: XCTestCase {
         let apps = [WebWrapApp(name: "Solo", url: "https://s.test", bundleId: "x.s", path: "/Applications/Solo.app")]
         XCTAssertTrue(AppRegistry.renderTable(apps).hasSuffix("1 app"))
     }
+
+    func testHandlerOnlyAppShowsLabelInsteadOfURL() {
+        let apps = [WebWrapApp(name: "Reader", url: "", bundleId: "x.r", path: "/Applications/Reader.app")]
+        XCTAssertTrue(AppRegistry.renderTable(apps).contains("(handler-only)"))
+    }
 }
 
 final class AppRegistryAbbreviateTests: XCTestCase {

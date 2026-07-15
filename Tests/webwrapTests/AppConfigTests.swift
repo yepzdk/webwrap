@@ -36,6 +36,18 @@ final class AppConfigParseTests: XCTestCase {
                                  externalLinks: false))
     }
 
+    func testEmptyURLParsesAsHandlerOnly() {
+        // Handler-only apps bake WebWrapURL as "" — still recognized as webwrap apps.
+        let cfg = AppConfig.parse(plistData: plist(["WebWrapURL": ""]))
+        XCTAssertNotNil(cfg)
+        XCTAssertEqual(cfg?.isHandlerOnly, true)
+    }
+
+    func testSiteAppIsNotHandlerOnly() {
+        let cfg = AppConfig.parse(plistData: plist(["WebWrapURL": "https://x.test"]))
+        XCTAssertEqual(cfg?.isHandlerOnly, false)
+    }
+
     func testExternalLinksDefaultsOnWhenAbsent() {
         // Apps created before the option have no key — they adopt the default (on).
         let cfg = AppConfig.parse(plistData: plist(["WebWrapURL": "https://x.test"]))

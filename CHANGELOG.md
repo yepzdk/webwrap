@@ -13,6 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   built-in SSO-host exception list, and `mailto:`-style links are handed to macOS. It's a
   per-app choice: a prompt in the interactive flow, `--external-links/--no-external-links`
   on `create`/`update` (default on; `--open-any-url` apps always browse in-window). (#68)
+- `create --no-url` builds a **handler-only app**: no home site — it opens to a quiet
+  built-in start page and exists to receive links (URL handling is enabled
+  automatically). Convert to a site app later with `update --url`. `list` shows these
+  as `(handler-only)`. (#71)
+
+### Fixed
+- The offline fallback page was unreadable in dark mode (light background under
+  light text).
+- The offline page's **Try Again** now retries the navigation that actually failed
+  (e.g. an incoming link), instead of always reloading the start URL.
 
 ## [0.6.0] - 2026-07-14
 

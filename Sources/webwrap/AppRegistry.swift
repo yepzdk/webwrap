@@ -66,7 +66,10 @@ enum AppRegistry {
             return "No webwrap apps found in \(searchPaths.map(abbreviate).joined(separator: " or "))."
         }
 
-        let rows = apps.map { (name: $0.name, url: $0.url, location: abbreviate(directory(of: $0.path))) }
+        // Handler-only apps (no home URL) show a label instead of an empty cell.
+        let rows = apps.map { (name: $0.name,
+                               url: $0.url.isEmpty ? "(handler-only)" : $0.url,
+                               location: abbreviate(directory(of: $0.path))) }
         let nameWidth = max("NAME".count, rows.map { $0.name.count }.max() ?? 0)
         let urlWidth = max("URL".count, rows.map { $0.url.count }.max() ?? 0)
 

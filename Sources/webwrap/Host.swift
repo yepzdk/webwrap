@@ -45,6 +45,11 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     /// reload — independent of any assumption about what `webView.url` becomes when the
     /// fallback is shown via `loadHTMLString`.
     private var isShowingFallback = false
+    /// The URL whose load produced the offline fallback, so Retry can retry *that*
+    /// navigation (e.g. an incoming Choosy-routed link) rather than falling back to
+    /// home. Set when the fallback is shown, cleared when any real load starts; only
+    /// consulted while `isShowingFallback`.
+    private var failedURL: URL?
 
     /// Whether the app accepts off-domain incoming URLs (from `--open-any-url`). When
     /// false, only same-site URLs are loaded; off-domain ones are ignored.
@@ -910,6 +915,7 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
             pendingIncomingURL = url
         } else {
             isShowingFallback = false
+            failedURL = nil
             webView.load(URLRequest(url: url))
             NSApp.activate(ignoringOtherApps: true)
         }
@@ -1002,7 +1008,12 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         guard !OfflineFallback.isIgnorable(errorCode: code) else { return }
 
         let appName = info("CFBundleName") ?? "WebWrap"
-        let host = intendedURL?.host
+        let nsError = error as NSError
+        // Remember what failed so Retry retries that navigation, not home. The URL is
+        // in the error's userInfo (as a URL or a string, depending on the failure).
+        failedURL = (nsError.userInfo[NSURLErrorFailingURLErrorKey] as? URL)
+            ?? (nsError.userInfo[NSURLErrorFailingURLStringErrorKey] as? String).flatMap(URL.init)
+        let host = failedURL?.host ?? intendedURL?.host
         let kind = OfflineFallback.classify(errorCode: code)
         let html = OfflineFallback.html(appName: appName, host: host, kind: kind,
                                         backgroundColor: backgroundColorRaw)
@@ -1011,15 +1022,24 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         webView.loadHTMLString(html, baseURL: nil)
     }
 
-    /// Loads the intended site URL and clears the fallback flag. All real-site loads go
-    /// through here so `isShowingFallback` is only ever true while the offline page is up.
+    /// Loads the app's home: the baked site URL, or — for handler-only apps with no
+    /// home URL — the built-in start page. All home loads go through here so
+    /// `isShowingFallback` is only ever true while the offline page is up.
     private func loadIntendedURL() {
-        guard let url = intendedURL else { return }
         isShowingFallback = false
-        webView.load(URLRequest(url: url))
+        failedURL = nil
+        if let url = intendedURL {
+            webView.load(URLRequest(url: url))
+        } else {
+            let appName = info("CFBundleName") ?? "WebWrap"
+            webView.loadHTMLString(StartPage.html(appName: appName,
+                                                  backgroundColor: backgroundColorRaw),
+                                   baseURL: nil)
+        }
     }
 
-    // Retry button on the fallback page posts here; reload the intended site URL.
+    // Retry button on the fallback page posts here; retry the failed navigation
+    // (falling back to home when the failing URL wasn't recoverable from the error).
     func userContentController(_ userContentController: WKUserContentController,
                                didReceive message: WKScriptMessage) {
         // The message handler is controller-wide, so the live site's JS could also post
@@ -1027,7 +1047,12 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         // explicitly rather than inferred from webView.url, whose value after
         // loadHTMLString isn't something we want to depend on.
         guard message.name == "webwrapRetry", isShowingFallback else { return }
-        loadIntendedURL()
+        if let failedURL {
+            isShowingFallback = false
+            webView.load(URLRequest(url: failedURL))
+        } else {
+            loadIntendedURL()
+        }
     }
 }
 
@@ -1291,7 +1316,9 @@ enum OfflineFallback {
         if let backgroundColor, CSSColor.parse(backgroundColor) != nil {
             bgRule = "background: \(backgroundColor);"
         } else {
-            bgRule = "background: #fafafa;"
+            // No manifest color: follow the system appearance (--bg switches in dark
+            // mode — a fixed light background would leave the dark-mode text invisible).
+            bgRule = "background: var(--bg);"
         }
         return """
         <!doctype html>
@@ -1302,12 +1329,12 @@ enum OfflineFallback {
         <title>\(escape(appName))</title>
         <style>
           :root {
-            --fg: #1c1c1e; --muted: #6b6b70; --accent: #2563eb;
+            --bg: #fafafa; --fg: #1c1c1e; --muted: #6b6b70; --accent: #2563eb;
             --accent-fg: #ffffff; --border: rgba(0,0,0,0.12);
           }
           @media (prefers-color-scheme: dark) {
             :root {
-              --fg: #f2f2f7; --muted: #9a9aa0; --accent: #3b82f6;
+              --bg: #1c1c1e; --fg: #f2f2f7; --muted: #9a9aa0; --accent: #3b82f6;
               --accent-fg: #ffffff; --border: rgba(255,255,255,0.16);
             }
           }
@@ -1369,5 +1396,70 @@ enum OfflineFallback {
             .replacingOccurrences(of: ">", with: "&gt;")
             .replacingOccurrences(of: "\"", with: "&quot;")
             .replacingOccurrences(of: "'", with: "&#39;")
+    }
+}
+
+/// Builds the built-in start page shown by handler-only apps (created with `--no-url`,
+/// so there's no home site) at launch and via Home. Pure (no AppKit/WebKit) so it's
+/// unit-testable. Shares `OfflineFallback`'s visual language and background rule:
+/// a parseable manifest color tints the page, otherwise it follows light/dark.
+enum StartPage {
+    static func html(appName: String, backgroundColor: String?) -> String {
+        let name = OfflineFallback.escape(appName)
+        let bgRule: String
+        if let backgroundColor, CSSColor.parse(backgroundColor) != nil {
+            bgRule = "background: \(backgroundColor);"
+        } else {
+            bgRule = "background: var(--bg);"
+        }
+        return """
+        <!doctype html>
+        <html lang="en">
+        <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>\(name)</title>
+        <style>
+          :root {
+            --bg: #fafafa; --fg: #1c1c1e; --muted: #6b6b70;
+          }
+          @media (prefers-color-scheme: dark) {
+            :root {
+              --bg: #1c1c1e; --fg: #f2f2f7; --muted: #9a9aa0;
+            }
+          }
+          * { box-sizing: border-box; }
+          html, body { height: 100%; margin: 0; }
+          body {
+            \(bgRule)
+            color: var(--fg);
+            font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+            display: flex; align-items: center; justify-content: center;
+            -webkit-font-smoothing: antialiased;
+          }
+          .card { text-align: center; padding: 24px; max-width: 30rem; }
+          .icon { color: var(--muted); margin-bottom: 16px; }
+          .icon svg { width: 44px; height: 44px; }
+          h1 { font-size: 20px; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 8px; }
+          p { color: var(--muted); margin: 0 auto; max-width: 26rem; }
+        </style>
+        </head>
+        <body>
+          <div class="card">
+            <div class="icon" aria-hidden="true">
+              <!-- link, Lucide-style line icon, inherits currentColor -->
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
+                   stroke-linecap="round" stroke-linejoin="round">
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+              </svg>
+            </div>
+            <h1>\(name)</h1>
+            <p>No page open. Route links here from your browser picker (e.g. Choosy),
+            or open one from the command line with <code>open</code>.</p>
+          </div>
+        </body>
+        </html>
+        """
     }
 }

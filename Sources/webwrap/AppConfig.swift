@@ -35,6 +35,10 @@ struct AppConfig: Equatable {
     /// default; `--no-external-links` opts out.
     var externalLinks: Bool
 
+    /// Whether this is a handler-only app (created with `--no-url`): no home site —
+    /// it opens to a built-in start page and exists to receive links.
+    var isHandlerOnly: Bool { url.isEmpty }
+
     /// Parses an existing app's `Info.plist` bytes into an `AppConfig`, or nil if the
     /// bundle isn't a webwrap app (no `WebWrapURL` marker) or can't be parsed. Pure.
     static func parse(plistData data: Data) -> AppConfig? {

@@ -91,6 +91,16 @@ final class InfoPlistTests: XCTestCase {
         XCTAssertTrue(off.contains("<key>WebWrapOpenAnyURL</key>\n    <string>0</string>"))
     }
 
+    func testHandlerOnlyPlistKeepsMarkerKeyAndURLTypes() {
+        // An empty URL still bakes the WebWrapURL marker (it identifies webwrap apps
+        // everywhere), and handler-only callers force URL handling on.
+        let xml = plist(url: "", handleURLs: true, openAnyURL: true)
+        XCTAssertTrue(xml.contains("<key>WebWrapURL</key>\n    <string></string>"))
+        XCTAssertTrue(xml.contains("<key>WebWrapHandleURLs</key>\n    <string>1</string>"))
+        XCTAssertTrue(xml.contains("<key>WebWrapOpenAnyURL</key>\n    <string>1</string>"))
+        XCTAssertTrue(xml.contains("<key>CFBundleURLTypes</key>"))
+    }
+
     func testExternalLinksKeyReflectsFlag() {
         // Default (on) bakes "1"; --no-external-links bakes "0".
         XCTAssertTrue(plist().contains("<key>WebWrapExternalLinks</key>\n    <string>1</string>"))

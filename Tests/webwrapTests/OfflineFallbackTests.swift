@@ -61,13 +61,14 @@ final class OfflineFallbackHTMLTests: XCTestCase {
     }
 
     func testNeutralBackgroundWhenNoColor() {
-        XCTAssertTrue(html(backgroundColor: nil).contains("background: #fafafa;"))
+        // The appearance-following variable (switches in dark mode), not a fixed color.
+        XCTAssertTrue(html(backgroundColor: nil).contains("background: var(--bg);"))
     }
 
     func testRejectsNonHexBackgroundColor() {
         // Only parseable (hex) colors are emitted; anything else falls back to neutral.
         // Named colors aren't parsed by CSSColor, so they're rejected too.
-        XCTAssertTrue(html(backgroundColor: "rebeccapurple").contains("background: #fafafa;"))
+        XCTAssertTrue(html(backgroundColor: "rebeccapurple").contains("background: var(--bg);"))
     }
 
     func testRejectsCSSInjectionAttempt() {
@@ -76,7 +77,7 @@ final class OfflineFallbackHTMLTests: XCTestCase {
         let malicious = "red; } body { display:none } .card { display:none"
         let page = html(backgroundColor: malicious)
         XCTAssertFalse(page.contains("display:none"))
-        XCTAssertTrue(page.contains("background: #fafafa;"))
+        XCTAssertTrue(page.contains("background: var(--bg);"))
     }
 
     func testNoEmojiInPage() {
