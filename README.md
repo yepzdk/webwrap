@@ -115,6 +115,7 @@ Passing both `--url` and `--name` skips the prompts entirely and builds straight
 | `--handle-urls` | Register as an http/https handler and open URLs the app is launched with (e.g. from Choosy) | off |
 | `--open-any-url` | With `--handle-urls`, also accept off-domain URLs (default: only same-site) | off |
 | `--external-links` / `--no-external-links` | Open links that leave the site in the default browser | on |
+| `--no-url` | Create a handler-only app: no home site, opens to a built-in start page, exists to receive links (implies `--handle-urls --open-any-url`) | — |
 | `--background-color` | Hex color painted behind the page on launch (e.g. `#1a73e8`); overrides the site manifest's color | manifest |
 | `--user-agent` | Browser identity the app reports: `safari`, `chrome`, `edge`, or a full custom UA string. Apps identify as Safari by default, which fixes most "browser not supported" pages | `safari` |
 | `--force` | Overwrite an existing `.app` | off |
@@ -143,6 +144,16 @@ webwrap create -u https://github.com -n "GitHub" --handle-urls
 ```
 
 It's **off by default** so apps don't claim `http`/`https` system-wide unless you opt in. By default only **same-site** URLs are accepted (a GitHub app loads `github.com` links and ignores `example.com`); pass `--open-any-url` to let the app navigate to any URL it's handed. Rejected off-domain URLs are simply ignored — the app stays on its current page.
+
+#### Handler-only apps
+
+You can go all the way and create an app that is *only* a link receiver — no home site at all:
+
+```sh
+webwrap create -n "Reader" --no-url
+```
+
+A handler-only app opens to a quiet built-in start page and waits for links; URL handling and off-domain acceptance are enabled automatically (that's the app's whole job), and Home (⌘⇧H) returns to the start page. Give it a URL later with `webwrap update --url …` to convert it into a normal site app.
 
 ### Links that leave the site
 

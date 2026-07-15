@@ -150,13 +150,20 @@ struct Update: ParsableCommand {
 
         if mode == .interactive {
             Prompt.intro("Updating \(existing.name) — current settings shown as defaults.")
-            // Steps 1–2 — URL + name, seeded from the current values.
-            Prompt.step(1, of: interactiveStepCount, title: "Website URL",
-                        help: "The address the app opens.")
-            guard let resolvedURL = Prompt.lineWithDefault("URL", default: existing.url) else {
-                throw CleanExit.message("Aborted — no changes made.")
+            // Steps 1–2 — URL + name, seeded from the current values. Handler-only apps
+            // have no home URL to edit (converting to a site app is `update --url`).
+            let resolvedURL: String
+            if existing.isHandlerOnly {
+                resolvedURL = ""
+            } else {
+                Prompt.step(1, of: interactiveStepCount, title: "Website URL",
+                            help: "The address the app opens.")
+                guard let entered = Prompt.lineWithDefault("URL", default: existing.url) else {
+                    throw CleanExit.message("Aborted — no changes made.")
+                }
+                try Create.validate(url: entered)
+                resolvedURL = entered
             }
-            try Create.validate(url: resolvedURL)
             Prompt.step(2, of: interactiveStepCount, title: "App name",
                         help: "The display name; changing it renames the .app (session is kept).")
             guard let resolvedName = Prompt.lineWithDefault("Name", default: existing.name) else {
@@ -169,7 +176,8 @@ struct Update: ParsableCommand {
             if resolvedURL != existing.url {
                 updateSeed.backgroundColor = Self.resolveManifestBackground(forURL: resolvedURL)
             }
-            guard let seed = promptForOptions(seed: updateSeed, context: .update) else {
+            guard let seed = promptForOptions(seed: updateSeed, context: .update,
+                                              handlerOnly: existing.isHandlerOnly) else {
                 throw CleanExit.message("Aborted — no changes made.")
             }
             merged = existing.applying(
@@ -334,6 +342,9 @@ struct Create: ParsableCommand {
     @Option(name: [.short, .long], help: "The URL the app should open, e.g. https://outlook.office.com")
     var url: String?
 
+    @Flag(name: .long, help: "Create a handler-only app with no home site: it opens to a built-in start page and exists to receive links (implies --handle-urls --open-any-url).")
+    var noUrl: Bool = false
+
     @Option(name: [.short, .long], help: "The display name of the app, e.g. \"Outlook\".")
     var name: String?
 
@@ -401,30 +412,40 @@ struct Create: ParsableCommand {
 
     func run() throws {
         try Self.validateSigning(noSign: noSign, sign: sign, notarize: notarize, notaryProfile: notaryProfile)
+        if url != nil && noUrl {
+            throw ValidationError("`--url` and `--no-url` are mutually exclusive.")
+        }
         if let backgroundColor { try Self.validate(backgroundColor: backgroundColor) }
         if let toolbarSize { _ = try Self.parse(toolbarSize: toolbarSize) }
         // Note the implication so `--open-any-url` alone isn't silently inert.
-        if openAnyUrl && !handleUrls {
+        if openAnyUrl && !handleUrls && !noUrl {
             FileHandle.standardError.write(Data(
                 "Note: --open-any-url implies --handle-urls; enabling URL handling.\n".utf8))
         }
 
+        // `--no-url` satisfies the URL requirement: the app deliberately has no home.
         switch OptionDefaults.createMode(isInteractive: Prompt.isInteractive,
-                                         hasURL: url != nil, hasName: name != nil) {
+                                         hasURL: url != nil || noUrl, hasName: name != nil) {
         case .nonInteractive:
-            // Both supplied — non-interactive path. Validate, then build directly.
-            try Self.validate(url: url!)
             try Self.validate(name: name!)
-            // Resolve icon + manifest metadata in one pass (skipped when an explicit
-            // --icon is given). We still want the manifest's background color even when
-            // the name came from a flag.
-            let site = resolveSite(url: url!)
-            try build(url: url!, name: name!, seed: seedFromFlags(manifest: site.metadata),
-                      resolvedIcon: site.icon)
+            if noUrl {
+                // Handler-only: no site to validate or resolve an icon/manifest from.
+                try build(url: "", name: name!,
+                          seed: seedFromFlags(manifest: IconResolver.SiteMetadata()),
+                          resolvedIcon: nil)
+            } else {
+                try Self.validate(url: url!)
+                // Resolve icon + manifest metadata in one pass (skipped when an explicit
+                // --icon is given). We still want the manifest's background color even
+                // when the name came from a flag.
+                let site = resolveSite(url: url!)
+                try build(url: url!, name: name!, seed: seedFromFlags(manifest: site.metadata),
+                          resolvedIcon: site.icon)
+            }
 
         case .missingInput:
             // Non-TTY (piped/CI): never prompt — fail clearly, as before.
-            let missing = [url == nil ? "--url" : nil, name == nil ? "--name" : nil]
+            let missing = [url == nil && !noUrl ? "--url" : nil, name == nil ? "--name" : nil]
                 .compactMap { $0 }.joined(separator: " and ")
             throw ValidationError("Missing required option(s): \(missing). "
                 + "Provide them as flags, or run interactively from a terminal.")
@@ -444,7 +465,8 @@ struct Create: ParsableCommand {
             width: width, height: height, toolbar: toolbar,
             toolbarStyle: ToolbarStyle.parse(toolbarSize),
             progressBar: progressBar,
-            handleURLs: effectiveHandleURLs, openAnyURL: openAnyUrl,
+            // Handler-only apps must receive links to be useful, so --no-url forces both.
+            handleURLs: effectiveHandleURLs || noUrl, openAnyURL: openAnyUrl || noUrl,
             externalLinks: externalLinks,
             iconPath: icon, manifestBackground: manifest.launchBackgroundColor,
             explicitBackground: backgroundColor, userAgent: userAgent,
@@ -456,9 +478,14 @@ struct Create: ParsableCommand {
     private func runInteractive(presetURL: String?, presetName: String?) throws {
         Prompt.intro("webwrap — create a macOS app from a website")
 
-        // Step 1 — URL (re-prompt until valid).
+        // Step 1 — URL (re-prompt until valid). Skipped for handler-only apps, which
+        // deliberately have no home URL.
         let resolvedURL: String
-        if let presetURL { resolvedURL = presetURL } else {
+        if noUrl {
+            resolvedURL = ""
+        } else if let presetURL {
+            resolvedURL = presetURL
+        } else {
             Prompt.step(1, of: interactiveStepCount, title: "Website URL",
                         help: "The address the app opens, e.g. https://github.com.")
             guard let entered = Prompt.ask("URL: ", validate: { input -> Prompt.Validation<String> in
@@ -469,9 +496,15 @@ struct Create: ParsableCommand {
         }
 
         // Resolve the icon + manifest metadata up front (one network pass) so the name step
-        // can default from the manifest and the summary can report the icon.
-        print("Resolving icon…")
-        let site = resolveSite(url: resolvedURL)
+        // can default from the manifest and the summary can report the icon. Handler-only
+        // apps have no site to resolve from.
+        let site: (icon: IconResolver.Resolved?, metadata: IconResolver.SiteMetadata)
+        if noUrl {
+            site = (nil, IconResolver.SiteMetadata())
+        } else {
+            print("Resolving icon…")
+            site = resolveSite(url: resolvedURL)
+        }
 
         // Step 2 — Name. Prefer an explicit --name; otherwise suggest from the manifest
         // (short_name/name), then fall back to the host-label guess.
@@ -498,7 +531,7 @@ struct Create: ParsableCommand {
         // Steps 3–10 — the remaining options, seeded from the flags (and the manifest
         // background). An explicit --icon seeds the icon prompt; otherwise it auto-resolves.
         guard let seed = promptForOptions(seed: seedFromFlags(manifest: site.metadata),
-                                          context: .create) else {
+                                          context: .create, handlerOnly: noUrl) else {
             throw CleanExit.message("Aborted — nothing was written.")
         }
         // The summary reports the actual resolved icon source when none was entered.
@@ -511,7 +544,7 @@ struct Create: ParsableCommand {
 
         Summary
           Name:        \(resolvedName)
-          URL:         \(resolvedURL)
+          URL:         \(resolvedURL.isEmpty ? "(none — handler-only)" : resolvedURL)
           Bundle ID:   \(bundleIdentifier)
           Icon:        \(iconSummary(seed: seed, resolvedIcon: resolvedIcon))
           Size:        \(seed.width)×\(seed.height)

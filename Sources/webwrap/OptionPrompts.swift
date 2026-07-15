@@ -139,7 +139,8 @@ let interactiveStepCount = 10
 /// (types q / Ctrl-D) at any step. Reads real stdin via `Prompt`, so — like `Prompt`
 /// itself — it carries no business logic worth unit-testing; the seed/implication logic it
 /// relies on lives in the pure `OptionDefaults` above.
-func promptForOptions(seed: OptionSeed, context: PromptContext) -> OptionSeed? {
+func promptForOptions(seed: OptionSeed, context: PromptContext,
+                      handlerOnly: Bool = false) -> OptionSeed? {
     var result = seed
     let total = interactiveStepCount
 
@@ -179,23 +180,32 @@ func promptForOptions(seed: OptionSeed, context: PromptContext) -> OptionSeed? {
     result.progressBar = progressBar
 
     // Step 6 — URL handling: links leaving the app, incoming URLs, and the conditional
-    // off-domain follow-up.
-    Prompt.step(6, of: total, title: "URL handling",
-                help: "How URLs flow out of and into the app: links that leave the\nsite can open in your default browser, and the app can register\nas an http/https handler so links from other apps (e.g. Choosy)\nload in it.")
-    guard let externalLinks = Prompt.confirmOrCancel(
-        "Open links that leave the site in your default browser?",
-        defaultYes: seed.externalLinks) else { return nil }
-    result.externalLinks = externalLinks
-    guard let handleURLs = Prompt.confirmOrCancel(
-        "Open URLs the app is launched with?", defaultYes: seed.handleURLs) else { return nil }
-    result.handleURLs = handleURLs
-    if handleURLs {
-        guard let openAny = Prompt.confirmOrCancel(
-            "  └ Accept off-domain URLs too (default: only same-site)?",
-            defaultYes: seed.openAnyURL) else { return nil }
-        result.openAnyURL = openAny
+    // off-domain follow-up. Handler-only apps exist to receive links, so there's
+    // nothing to ask — handling is forced on (and external links are moot: an app
+    // that accepts any domain browses everything in-window).
+    if handlerOnly {
+        Prompt.step(6, of: total, title: "URL handling",
+                    help: "Handler-only app: it receives any URL routed to it, so URL\nhandling is enabled automatically.")
+        result.handleURLs = true
+        result.openAnyURL = true
     } else {
-        result.openAnyURL = false
+        Prompt.step(6, of: total, title: "URL handling",
+                    help: "How URLs flow out of and into the app: links that leave the\nsite can open in your default browser, and the app can register\nas an http/https handler so links from other apps (e.g. Choosy)\nload in it.")
+        guard let externalLinks = Prompt.confirmOrCancel(
+            "Open links that leave the site in your default browser?",
+            defaultYes: seed.externalLinks) else { return nil }
+        result.externalLinks = externalLinks
+        guard let handleURLs = Prompt.confirmOrCancel(
+            "Open URLs the app is launched with?", defaultYes: seed.handleURLs) else { return nil }
+        result.handleURLs = handleURLs
+        if handleURLs {
+            guard let openAny = Prompt.confirmOrCancel(
+                "  └ Accept off-domain URLs too (default: only same-site)?",
+                defaultYes: seed.openAnyURL) else { return nil }
+            result.openAnyURL = openAny
+        } else {
+            result.openAnyURL = false
+        }
     }
 
     // Step 7 — background color.
