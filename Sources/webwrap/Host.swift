@@ -270,6 +270,19 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Quit \(appName)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
+        // File menu: Open URL from Clipboard — the keyboard path for handing the app a
+        // link from elsewhere (browsers keep their own link clicks, so Choosy can't
+        // route a page you're already viewing here).
+        let fileItem = NSMenuItem()
+        mainMenu.addItem(fileItem)
+        let fileMenu = NSMenu(title: "File")
+        fileItem.submenu = fileMenu
+        let openClipboard = fileMenu.addItem(withTitle: "Open URL from Clipboard",
+                                             action: #selector(openFromClipboard(_:)),
+                                             keyEquivalent: "o")
+        openClipboard.keyEquivalentModifierMask = [.command, .shift]
+        openClipboard.target = self
+
         // Edit menu: the standard responder-chain editing actions (this is what makes
         // copy/paste/cut/select-all work inside the web view).
         let editItem = NSMenuItem()
@@ -495,6 +508,19 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     @objc private func goForward(_ sender: Any?) { webView.goForward() }
     @objc private func goHome(_ sender: Any?) { loadIntendedURL() }
 
+    /// Opens the URL on the clipboard through the same routing as an incoming URL,
+    /// so domain scoping matches the app's config (site apps: same-site only;
+    /// open-any-url/handler-only: anything). Beeps when the clipboard holds no
+    /// acceptable URL.
+    @objc private func openFromClipboard(_ sender: Any?) {
+        let url = HostNavigation.clipboardURL(
+            from: NSPasteboard.general.string(forType: .string))
+        guard let url, openIncoming(url) else {
+            NSSound.beep()
+            return
+        }
+    }
+
     // MARK: - Reader mode
 
     @objc private func toggleReader(_ sender: Any?) {
@@ -576,6 +602,12 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
             // Needs a real web page (the start page / offline fallback aren't articles).
             guard let url = webView?.url else { return false }
             return HostNavigation.isWebURL(url)
+        case #selector(openFromClipboard(_:)):
+            // Live-validated against the clipboard: enabled only when it holds a URL
+            // this app would accept.
+            guard let url = HostNavigation.clipboardURL(
+                from: NSPasteboard.general.string(forType: .string)) else { return false }
+            return acceptableIncoming(url)
         default:
             return true
         }
@@ -1303,6 +1335,25 @@ enum HostNavigation {
     static func isWebURL(_ url: URL) -> Bool {
         guard let scheme = url.scheme?.lowercased() else { return false }
         return scheme == "http" || scheme == "https"
+    }
+
+    /// Parses clipboard text into an openable web URL, forgivingly (paste-and-go
+    /// style): an absolute http(s) URL is used as-is; a bare host form like
+    /// "example.com/article" is retried with https; anything else — prose, empty
+    /// text, and non-web schemes (javascript:, file:, mailto:), which must never
+    /// navigate — is nil.
+    static func clipboardURL(from raw: String?) -> URL? {
+        guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty,
+              trimmed.rangeOfCharacter(from: .whitespacesAndNewlines) == nil
+        else { return nil }
+        if let url = URL(string: trimmed), url.scheme != nil {
+            return isWebURL(url) ? url : nil
+        }
+        // Bare host form: require a dot so ordinary words don't turn into lookups.
+        guard trimmed.contains(".") else { return nil }
+        guard let url = URL(string: "https://" + trimmed), url.host != nil else { return nil }
+        return url
     }
 }
 

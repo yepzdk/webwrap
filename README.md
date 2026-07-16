@@ -147,6 +147,8 @@ webwrap create -u https://github.com -n "GitHub" --handle-urls
 
 It's **off by default** so apps don't claim `http`/`https` system-wide unless you opt in. By default only **same-site** URLs are accepted (a GitHub app loads `github.com` links and ignores `example.com`); pass `--open-any-url` to let the app navigate to any URL it's handed. Rejected off-domain URLs are simply ignored — the app stays on its current page.
 
+There's also a keyboard path that needs no routing setup at all: **File → Open URL from Clipboard (⇧⌘O)** opens whatever URL is on the clipboard (a bare `example.com/…` works too), subject to the same same-site scoping. Handy for pages you're already viewing in a browser, which Choosy can't intercept: ⌘L ⌘C there, ⇧⌘O here.
+
 #### Handler-only apps
 
 You can go all the way and create an app that is *only* a link receiver — no home site at all:
@@ -166,6 +168,8 @@ Pass `--reader` to make it automatic — every page that looks like an article o
 ```sh
 webwrap create -n "Reader" --reader --no-url
 ```
+
+Two practical notes for a reader app: to get full text from sites that paywall logged-out visitors, **log in once inside the app** (⇧⌘R to the original page, sign in — the session persists). And to send an article over from the browser you're reading in (Choosy can't intercept pages you're already viewing): copy the URL and press **⇧⌘O** in the reader.
 
 ### Links that leave the site
 

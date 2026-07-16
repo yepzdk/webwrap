@@ -164,6 +164,46 @@ final class NavigationPolicyTests: XCTestCase {
     }
 }
 
+final class ClipboardURLTests: XCTestCase {
+    func testAbsoluteWebURLsPassThrough() {
+        XCTAssertEqual(HostNavigation.clipboardURL(from: "https://example.com/a?b=c"),
+                       URL(string: "https://example.com/a?b=c"))
+        XCTAssertEqual(HostNavigation.clipboardURL(from: "http://example.com"),
+                       URL(string: "http://example.com"))
+        XCTAssertEqual(HostNavigation.clipboardURL(from: "HTTPS://example.com"),
+                       URL(string: "HTTPS://example.com"))
+    }
+
+    func testSurroundingWhitespaceIsTrimmed() {
+        XCTAssertEqual(HostNavigation.clipboardURL(from: "  https://example.com \n"),
+                       URL(string: "https://example.com"))
+    }
+
+    func testBareHostGetsHTTPS() {
+        // Paste-and-go style: a copied "example.com/article" opens as https.
+        XCTAssertEqual(HostNavigation.clipboardURL(from: "example.com/article"),
+                       URL(string: "https://example.com/article"))
+    }
+
+    func testNonWebSchemesRejected() {
+        // These must never navigate from a paste.
+        XCTAssertNil(HostNavigation.clipboardURL(from: "javascript:alert(1)"))
+        XCTAssertNil(HostNavigation.clipboardURL(from: "file:///etc/passwd"))
+        XCTAssertNil(HostNavigation.clipboardURL(from: "mailto:a@b.com"))
+    }
+
+    func testProseAndEmptyRejected() {
+        XCTAssertNil(HostNavigation.clipboardURL(from: nil))
+        XCTAssertNil(HostNavigation.clipboardURL(from: ""))
+        XCTAssertNil(HostNavigation.clipboardURL(from: "   \n "))
+        // Internal whitespace → it's text, not a URL.
+        XCTAssertNil(HostNavigation.clipboardURL(from: "read example.com later"))
+        XCTAssertNil(HostNavigation.clipboardURL(from: "hello world"))
+        // A single word without a dot isn't a host.
+        XCTAssertNil(HostNavigation.clipboardURL(from: "example"))
+    }
+}
+
 final class IsWebURLTests: XCTestCase {
     func testAcceptsHTTPAndHTTPS() {
         XCTAssertTrue(HostNavigation.isWebURL(URL(string: "https://x.test")!))

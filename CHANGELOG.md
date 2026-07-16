@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Open URL from Clipboard** (File menu, ⇧⌘O): opens a copied link — including bare
+  `example.com/…` forms — through the app's normal URL routing, so same-site scoping
+  still applies. The keyboard path for pages a browser is already viewing, which
+  Choosy can't route. (#75)
 - **Reader mode**: ⇧⌘R (View → Toggle Reader View) renders the current article as a
   clean, distraction-free page — powered by Mozilla's Readability, the library behind
   Firefox's reader view — in every generated app. `--reader` on `create`/`update`
