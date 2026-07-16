@@ -503,6 +503,13 @@ struct Create: ParsableCommand {
             Prompt.step(1, of: interactiveStepCount, title: "Website URL",
                         help: "The address the app opens, e.g. https://github.com.")
             guard let entered = Prompt.ask("URL: ", validate: { input -> Prompt.Validation<String> in
+                // Point a blank entry at the handler-only escape hatch — the
+                // interactive flow has no step for it, only the flag.
+                if input.isEmpty {
+                    return .invalid("Enter an absolute URL like https://example.com — or run "
+                        + "`webwrap create --no-url` for an app with no home site "
+                        + "that just receives links.")
+                }
                 do { try Self.validate(url: input); return .valid(input) }
                 catch { return .invalid("\(error)") }
             }) else { throw CleanExit.message("Aborted — nothing was written.") }
