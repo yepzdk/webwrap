@@ -53,6 +53,9 @@ enum HostSettings {
         /// Page zoom is plain persisted state, not an override (there's no baked
         /// default to fall back to); absent means 1.0.
         static let zoom = "webwrap.zoom"
+        /// Reader appearance settings (a `ReaderSettings` JSON blob) — plain persisted
+        /// state like zoom; absent means the stock reader design.
+        static let readerSettings = "webwrap.reader.settings"
     }
 
     /// The minimal read/write surface `HostSettings` needs from a key-value store.
@@ -128,6 +131,18 @@ enum HostSettings {
         store.set(String(clampZoom(value)), forKey: Key.zoom)
     }
 
+    // MARK: - Reader appearance
+
+    /// The persisted reader-settings JSON, nil when the reader was never customized.
+    /// (De)serialization lives in `ReaderSettings`; this layer only stores the string.
+    static func readerSettingsJSON(store: Store) -> String? {
+        store.string(forKey: Key.readerSettings)
+    }
+
+    static func setReaderSettingsJSON(_ value: String, store: Store) {
+        store.set(value, forKey: Key.readerSettings)
+    }
+
     // MARK: - Writing overrides
 
     static func setToolbar(_ value: Bool, store: Store) {
@@ -168,6 +183,7 @@ enum HostSettings {
         store.remove(forKey: Key.userAgentSet)
         store.remove(forKey: Key.userAgent)
         store.remove(forKey: Key.zoom)
+        store.remove(forKey: Key.readerSettings)
     }
 }
 
