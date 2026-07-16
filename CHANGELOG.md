@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Incoming links (Choosy, `open -a`, ⇧⌘O) are **cleaned before navigating**: tracking
+  redirects that embed the real destination (TLDR newsletter, Google/Facebook/SafeLinks,
+  Postmark) are unwrapped — so blocked tracking hosts (Pi-hole) no longer dead-end the
+  app — and tracking parameters (`utm_*`, `fbclid`, …) are stripped. Ported from
+  [yepzdk/url-cleaner](https://github.com/yepzdk/url-cleaner). (#79)
 - **Open URL from Clipboard** (File menu, ⇧⌘O): opens a copied link — including bare
   `example.com/…` forms — through the app's normal URL routing, so same-site scoping
   still applies. The keyboard path for pages a browser is already viewing, which
