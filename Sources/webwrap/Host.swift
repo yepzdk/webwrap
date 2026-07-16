@@ -1037,6 +1037,11 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     /// for `applicationDidFinishLaunching` to load. Returns whether it was accepted.
     @discardableResult
     private func openIncoming(_ url: URL) -> Bool {
+        // Unwrap tracking redirects / strip tracking params first, so the app goes
+        // straight to the destination (the tracking host may be blocked, e.g. by a
+        // Pi-hole) — and so a tracking link wrapping a same-site URL passes the
+        // domain scoping below.
+        let url = URLCleaner.clean(url)
         guard acceptableIncoming(url) else { return false }
         if webView == nil {
             pendingIncomingURL = url

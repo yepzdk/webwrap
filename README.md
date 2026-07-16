@@ -147,6 +147,8 @@ webwrap create -u https://github.com -n "GitHub" --handle-urls
 
 It's **off by default** so apps don't claim `http`/`https` system-wide unless you opt in. By default only **same-site** URLs are accepted (a GitHub app loads `github.com` links and ignores `example.com`); pass `--open-any-url` to let the app navigate to any URL it's handed. Rejected off-domain URLs are simply ignored — the app stays on its current page.
 
+Incoming links are also **cleaned before navigating** (logic ported from [url-cleaner](https://github.com/yepzdk/url-cleaner)): tracking redirects that embed the real destination — newsletter wrappers like TLDR's, Google/Facebook/SafeLinks redirects, Postmark — are unwrapped so the app goes straight to the article without ever contacting the tracking host (which your DNS blocker may be blocking anyway), and tracking parameters (`utm_*`, `fbclid`, …) are stripped. Cleaning runs before the same-site check, so a tracking link wrapping a same-site URL is accepted.
+
 There's also a keyboard path that needs no routing setup at all: **File → Open URL from Clipboard (⇧⌘O)** opens whatever URL is on the clipboard (a bare `example.com/…` works too), subject to the same same-site scoping. Handy for pages you're already viewing in a browser, which Choosy can't intercept: ⌘L ⌘C there, ⇧⌘O here.
 
 #### Handler-only apps
