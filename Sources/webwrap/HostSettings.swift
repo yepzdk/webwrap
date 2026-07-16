@@ -50,6 +50,9 @@ enum HostSettings {
         /// The user-agent override is tri-state like the background: marker + value.
         static let userAgentSet = "webwrap.override.userAgentSet"
         static let userAgent = "webwrap.override.userAgentValue"
+        /// Page zoom is plain persisted state, not an override (there's no baked
+        /// default to fall back to); absent means 1.0.
+        static let zoom = "webwrap.zoom"
     }
 
     /// The minimal read/write surface `HostSettings` needs from a key-value store.
@@ -104,6 +107,27 @@ enum HostSettings {
         return store.string(forKey: Key.userAgent).flatMap { $0.isEmpty ? nil : $0 }
     }
 
+    // MARK: - Page zoom
+
+    /// The supported page-zoom bounds and the step the menu actions move by.
+    static let zoomRange = 0.5...3.0
+    static let zoomStep = 0.1
+
+    /// Clamps a zoom value into the supported range.
+    static func clampZoom(_ value: Double) -> Double {
+        min(max(value, zoomRange.lowerBound), zoomRange.upperBound)
+    }
+
+    /// The persisted page zoom: 1.0 when never set or garbled, clamped otherwise.
+    static func zoom(store: Store) -> Double {
+        guard let raw = store.string(forKey: Key.zoom), let value = Double(raw) else { return 1.0 }
+        return clampZoom(value)
+    }
+
+    static func setZoom(_ value: Double, store: Store) {
+        store.set(String(clampZoom(value)), forKey: Key.zoom)
+    }
+
     // MARK: - Writing overrides
 
     static func setToolbar(_ value: Bool, store: Store) {
@@ -143,6 +167,7 @@ enum HostSettings {
         store.remove(forKey: Key.backgroundColor)
         store.remove(forKey: Key.userAgentSet)
         store.remove(forKey: Key.userAgent)
+        store.remove(forKey: Key.zoom)
     }
 }
 

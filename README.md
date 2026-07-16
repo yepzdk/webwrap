@@ -57,26 +57,26 @@ $ webwrap create
 webwrap — create a macOS app from a website
 Press Enter to accept the [default]. Type q to cancel.
 
-[Step 1/10] Website URL
+[Step 1/11] Website URL
   The address the app opens, e.g. https://github.com.
 URL: https://outlook.office.com
 Resolving icon…
 
-[Step 2/10] App name
+[Step 2/11] App name
   The display name and the .app filename.
 Name [Outlook]:
 
-[Step 4/10] Toolbar
+[Step 4/11] Toolbar
   A back/forward/reload/home bar in the title area.
   Off keeps the chromeless look.
 Show navigation toolbar? [y/N]:
 
-[Step 5/10] Progress line
+[Step 5/11] Progress line
   A thin accent line at the top edge that tracks page loads
   and fades out when done.
 Show page-load progress line? [y/N]:
 
-… (steps 3, 6–10: window size, URL handling, background, browser identity, icon, signing) …
+… (steps 3, 6–11: window size, URL handling, reader mode, background, browser identity, icon, signing) …
 
 Summary
   Name:        Outlook
@@ -88,6 +88,7 @@ Summary
   Progress:    no
   Handle URLs: no
   Ext. links:  default browser
+  Reader:      manual (⇧⌘R)
   Background:  default
   User agent:  safari (default)
   Signing:     ad-hoc
@@ -116,6 +117,7 @@ Passing both `--url` and `--name` skips the prompts entirely and builds straight
 | `--open-any-url` | With `--handle-urls`, also accept off-domain URLs (default: only same-site) | off |
 | `--external-links` / `--no-external-links` | Open links that leave the site in the default browser | on |
 | `--no-url` | Create a handler-only app: no home site, opens to a built-in start page, exists to receive links (implies `--handle-urls --open-any-url`) | — |
+| `--reader` | Open pages in the distraction-free reader view automatically (⇧⌘R toggles it on any page either way) | off |
 | `--background-color` | Hex color painted behind the page on launch (e.g. `#1a73e8`); overrides the site manifest's color | manifest |
 | `--user-agent` | Browser identity the app reports: `safari`, `chrome`, `edge`, or a full custom UA string. Apps identify as Safari by default, which fixes most "browser not supported" pages | `safari` |
 | `--force` | Overwrite an existing `.app` | off |
@@ -154,6 +156,16 @@ webwrap create -n "Reader" --no-url
 ```
 
 A handler-only app opens to a quiet built-in start page and waits for links; URL handling and off-domain acceptance are enabled automatically (that's the app's whole job), and Home (⌘⇧H) returns to the start page. Give it a URL later with `webwrap update --url …` to convert it into a normal site app.
+
+### Reader mode
+
+Every generated app has a **reader view**: press **⇧⌘R** (View → Toggle Reader View) on an article and the page is swapped for a clean, distraction-free rendering — title, byline, and body, no ads or site chrome. It's powered by [Readability](https://github.com/mozilla/readability), the library behind Firefox's reader view; because extraction runs on the rendered page inside the app's own session, articles behind logins you're signed in to extract correctly. Press ⇧⌘R again to return to the original page. **⌘+ / ⌘− / ⌘0** adjust the page zoom (any page, not just reader view) and persist across launches.
+
+Pass `--reader` to make it automatic — every page that looks like an article opens as a reader page (pages that don't, load normally). Combined with a handler-only app, that's a standalone reading app for a browser picker like Choosy:
+
+```sh
+webwrap create -n "Reader" --reader --no-url
+```
 
 ### Links that leave the site
 
@@ -202,6 +214,7 @@ Run with just the app path on a terminal and `update` walks the same prompts as 
 | `--handle-urls` / `--no-handle-urls` | Turn URL handling on or off (current setting kept if omitted) |
 | `--open-any-url` / `--no-open-any-url` | Allow or restrict off-domain URLs (current setting kept if omitted) |
 | `--external-links` / `--no-external-links` | Open off-site links in the default browser, or in the window (current setting kept if omitted) |
+| `--reader` / `--no-reader` | Open pages in the reader view automatically, or only via ⇧⌘R (current setting kept if omitted) |
 | `--background-color` / `--no-background-color` | Set or clear the window background color. If omitted, it follows the new `--url`'s manifest color when the URL changes, otherwise the current setting is kept |
 | `--user-agent` / `--no-user-agent` | Set the browser identity (`safari`/`chrome`/`edge` or a custom UA string) or reset it to the Safari default (current setting kept if omitted) |
 | `--sign`, `--notarize`, `--notary-profile`, `--no-sign` | Signing, same as `create` |

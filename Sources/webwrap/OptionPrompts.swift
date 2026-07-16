@@ -14,6 +14,8 @@ struct OptionSeed: Equatable {
     var openAnyURL: Bool
     /// Whether links that leave the site open in the system default browser.
     var externalLinks: Bool
+    /// Whether page loads auto-enter the distraction-free reader view.
+    var reader: Bool
     /// Explicit icon path, or nil meaning "resolve from site" (create) / "keep existing" (update).
     var iconPath: String?
     /// CSS background color, or nil meaning "none / from manifest".
@@ -46,6 +48,7 @@ enum OptionDefaults {
     static func forCreate(width: Int, height: Int, toolbar: Bool, toolbarStyle: ToolbarStyle,
                           progressBar: Bool,
                           handleURLs: Bool, openAnyURL: Bool, externalLinks: Bool,
+                          reader: Bool,
                           iconPath: String?, manifestBackground: String?,
                           explicitBackground: String?, userAgent: String?,
                           noSign: Bool, signIdentity: String?,
@@ -54,6 +57,7 @@ enum OptionDefaults {
             width: width, height: height, toolbar: toolbar, toolbarStyle: toolbarStyle,
             progressBar: progressBar,
             handleURLs: handleURLs, openAnyURL: openAnyURL, externalLinks: externalLinks,
+            reader: reader,
             iconPath: iconPath, backgroundColor: explicitBackground ?? manifestBackground,
             userAgent: userAgent,
             noSign: noSign, signIdentity: signIdentity,
@@ -70,6 +74,7 @@ enum OptionDefaults {
             progressBar: existing.progressBar,
             handleURLs: existing.handleURLs, openAnyURL: existing.openAnyURL,
             externalLinks: existing.externalLinks,
+            reader: existing.reader,
             iconPath: nil, backgroundColor: existing.backgroundColor,
             userAgent: existing.userAgent,
             noSign: false, signIdentity: nil, notarize: false, notaryProfile: nil)
@@ -129,10 +134,10 @@ enum PromptContext {
 }
 
 /// Total steps in the full interactive flow, used for the `[Step n/total]` indicator.
-/// URL (1) and Name (2) are prompted by the caller; `promptForOptions` covers 3–10.
+/// URL (1) and Name (2) are prompted by the caller; `promptForOptions` covers 3–11.
 /// Conditional follow-ups (off-domain, notarize) nest under their parent step rather than
 /// taking their own number, so the denominator is stable.
-let interactiveStepCount = 10
+let interactiveStepCount = 11
 
 /// Walks the option prompts (steps 3–10) in order, each seeded from `seed`, with a step
 /// header + help text, and returns the filled-in values. Returns nil if the user cancels
@@ -208,8 +213,15 @@ func promptForOptions(seed: OptionSeed, context: PromptContext,
         }
     }
 
-    // Step 7 — background color.
-    Prompt.step(7, of: total, title: "Background color",
+    // Step 7 — reader mode.
+    Prompt.step(7, of: total, title: "Reader mode",
+                help: "Show articles as clean, distraction-free reader pages by\ndefault (Readability). ⇧⌘R toggles it on any page either way.")
+    guard let reader = Prompt.confirmOrCancel(
+        "Open pages in reader view automatically?", defaultYes: seed.reader) else { return nil }
+    result.reader = reader
+
+    // Step 8 — background color.
+    Prompt.step(8, of: total, title: "Background color",
                 help: "A hex color (e.g. #1a73e8) painted behind the page to avoid\na white flash on launch. Blank for none.")
     let bgDefaultDisplay = seed.backgroundColor ?? "none"
     guard let background = Prompt.askWithDefault(
@@ -217,17 +229,17 @@ func promptForOptions(seed: OptionSeed, context: PromptContext,
         validate: colorValidator) else { return nil }
     result.backgroundColor = background
 
-    // Step 8 — user agent (browser identity).
-    Prompt.step(8, of: total, title: "Browser identity",
+    // Step 9 — user agent (browser identity).
+    Prompt.step(9, of: total, title: "Browser identity",
                 help: "The user agent the app reports: safari (default), chrome, edge,\nor a full custom UA string. Helps with \"browser not supported\" pages.")
     guard let userAgent = Prompt.askWithDefault(
         "User agent", default: seed.userAgent, defaultDisplay: seed.userAgent ?? "safari",
         validate: { .valid($0) }) else { return nil }
     result.userAgent = userAgent
 
-    // Step 9 — icon.
+    // Step 10 — icon.
     let iconBlankMeans = context == .create ? "resolve from the site" : "keep the existing icon"
-    Prompt.step(9, of: total, title: "Icon",
+    Prompt.step(10, of: total, title: "Icon",
                 help: "Path to a .png or .icns file. Blank to \(iconBlankMeans).")
     let iconDefaultDisplay = seed.iconPath ?? (context == .create ? "resolve from site" : "keep existing")
     guard let iconPath = Prompt.askWithDefault(
@@ -235,8 +247,8 @@ func promptForOptions(seed: OptionSeed, context: PromptContext,
         validate: iconValidator) else { return nil }
     result.iconPath = iconPath
 
-    // Step 10 — signing.
-    Prompt.step(10, of: total, title: "Signing",
+    // Step 11 — signing.
+    Prompt.step(11, of: total, title: "Signing",
                 help: "Ad-hoc signing works for local use. Developer ID + notarization\nis for distributing the app to others.")
     guard let signing = promptForSigning(seed: seed) else { return nil }
     result.noSign = signing.noSign

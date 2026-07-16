@@ -57,6 +57,15 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     /// Whether links that leave the site open in the system default browser (the
     /// default; `--no-external-links` bakes this off).
     private var externalLinks = true
+
+    /// Reader mode. `readerAuto`: whether finished page loads auto-enter the reader
+    /// (baked from `WebWrapReader`). `isShowingReader`: whether the reader rendering
+    /// is what's currently on screen (the swap is not a navigation, so this can't be
+    /// inferred from the URL). `suppressReaderOnce`: set when toggling back to the
+    /// original page so its reload isn't immediately re-extracted by the auto path.
+    private var readerAuto = false
+    private var isShowingReader = false
+    private var suppressReaderOnce = false
     /// An incoming URL (from `open -a` / Choosy / the GetURL Apple Event) received
     /// before the web view exists at cold launch. `applicationDidFinishLaunching` loads
     /// this instead of the baked-in home page when set.
@@ -158,6 +167,7 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         bakedProgressBar = info("WebWrapProgressBar") == "1"
         bakedBackgroundColor = info("WebWrapBackgroundColor")
         bakedUserAgent = info("WebWrapUserAgent")
+        readerAuto = info("WebWrapReader") == "1"
         backgroundColorRaw = HostSettings.backgroundColor(store: settingsStore,
                                                           bakedDefault: bakedBackgroundColor)
 
@@ -188,6 +198,7 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         // Chrome/Edge presets and custom strings replace the whole UA; nil keeps the
         // Safari-suffixed default from applicationNameForUserAgent above.
         applyUserAgent(HostSettings.userAgent(store: settingsStore, bakedDefault: bakedUserAgent))
+        webView.pageZoom = HostSettings.zoom(store: settingsStore)
         window.contentView!.addSubview(webView)
 
         // Paint the window and the web view's under-page area with the effective
@@ -292,6 +303,19 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         let home = viewMenu.addItem(withTitle: "Home", action: #selector(goHome(_:)), keyEquivalent: "h")
         home.keyEquivalentModifierMask = [.command, .shift]
         home.target = self
+        // Reader view: extract the article from the current page and show just it.
+        let reader = viewMenu.addItem(withTitle: "Toggle Reader View",
+                                      action: #selector(toggleReader(_:)), keyEquivalent: "r")
+        reader.keyEquivalentModifierMask = [.command, .shift]
+        reader.target = self
+        viewMenu.addItem(.separator())
+        let zoomIn = viewMenu.addItem(withTitle: "Zoom In", action: #selector(zoomIn(_:)), keyEquivalent: "+")
+        zoomIn.target = self
+        let zoomOut = viewMenu.addItem(withTitle: "Zoom Out", action: #selector(zoomOut(_:)), keyEquivalent: "-")
+        zoomOut.target = self
+        let actualSize = viewMenu.addItem(withTitle: "Actual Size",
+                                          action: #selector(actualSize(_:)), keyEquivalent: "0")
+        actualSize.target = self
         viewMenu.addItem(.separator())
         viewMenu.addItem(withTitle: "Back", action: #selector(goBack(_:)), keyEquivalent: "[").target = self
         viewMenu.addItem(withTitle: "Forward", action: #selector(goForward(_:)), keyEquivalent: "]").target = self
@@ -471,6 +495,63 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     @objc private func goForward(_ sender: Any?) { webView.goForward() }
     @objc private func goHome(_ sender: Any?) { loadIntendedURL() }
 
+    // MARK: - Reader mode
+
+    @objc private func toggleReader(_ sender: Any?) {
+        if isShowingReader {
+            // Back to the original page; the reload must not immediately re-enter.
+            suppressReaderOnce = true
+            isShowingReader = false
+            webView.reload()
+        } else {
+            enterReader(manual: true)
+        }
+    }
+
+    /// Runs the Readability extraction on the current page and, on success, swaps in
+    /// the reader rendering in place. Failure leaves the page untouched: a beep for a
+    /// manual request, silence for the automatic path — never an error page.
+    private func enterReader(manual: Bool) {
+        webView.evaluateJavaScript(Reader.extractionScript) { [weak self] result, _ in
+            guard let self else { return }
+            guard let article = Reader.decode(result),
+                  let script = ReaderPage.replacementScript(
+                      html: ReaderPage.html(article: article,
+                                            backgroundColor: self.backgroundColorRaw))
+            else {
+                if manual { NSSound.beep() }
+                return
+            }
+            self.webView.evaluateJavaScript(script) { [weak self] _, error in
+                guard let self else { return }
+                if error == nil {
+                    self.isShowingReader = true
+                } else if manual {
+                    NSSound.beep()
+                }
+            }
+        }
+    }
+
+    // MARK: - Page zoom
+
+    @objc private func zoomIn(_ sender: Any?) {
+        applyZoom(Double(webView.pageZoom) + HostSettings.zoomStep)
+    }
+
+    @objc private func zoomOut(_ sender: Any?) {
+        applyZoom(Double(webView.pageZoom) - HostSettings.zoomStep)
+    }
+
+    @objc private func actualSize(_ sender: Any?) { applyZoom(1.0) }
+
+    /// Applies a clamped page zoom and persists it so it survives relaunch.
+    private func applyZoom(_ raw: Double) {
+        let clamped = HostSettings.clampZoom(raw)
+        webView.pageZoom = clamped
+        HostSettings.setZoom(clamped, store: settingsStore)
+    }
+
     /// Copies the URL of the page currently shown to the system pasteboard. No-op (and
     /// disabled in the menu) when nothing is loaded.
     @objc private func copyCurrentURL(_ sender: Any?) {
@@ -491,6 +572,10 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
             return webView?.canGoBack ?? false
         case #selector(goForward(_:)):
             return webView?.canGoForward ?? false
+        case #selector(toggleReader(_:)):
+            // Needs a real web page (the start page / offline fallback aren't articles).
+            guard let url = webView?.url else { return false }
+            return HostNavigation.isWebURL(url)
         default:
             return true
         }
@@ -874,6 +959,8 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         let before = webView.customUserAgent
         applyUserAgent(bakedUserAgent)
         if webView.customUserAgent != before { webView.reload() }
+        // Zoom has no baked default; restoring clears it back to 1.0.
+        webView.pageZoom = HostSettings.zoom(store: settingsStore)
         syncSettingsControls()
     }
 
@@ -984,6 +1071,27 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
             }
         }
         return nil
+    }
+
+    // MARK: - Reader auto-entry (navigation delegate)
+
+    // A new navigation means whatever it lands on is a fresh page, not our reader
+    // rendering (the reader swap itself is not a navigation, so it never hits this).
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        isShowingReader = false
+    }
+
+    // Auto-reader: when baked on, try to enter the reader as soon as a real page
+    // finishes loading. Internal pages (start page, offline fallback) aren't web URLs
+    // and are skipped; a toggle back to the original suppresses one round.
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        if suppressReaderOnce {
+            suppressReaderOnce = false
+            return
+        }
+        guard readerAuto, !isShowingReader, !isShowingFallback,
+              let url = webView.url, HostNavigation.isWebURL(url) else { return }
+        enterReader(manual: false)
     }
 
     // MARK: - Load failures (offline fallback)

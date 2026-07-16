@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Reader mode**: ⇧⌘R (View → Toggle Reader View) renders the current article as a
+  clean, distraction-free page — powered by Mozilla's Readability, the library behind
+  Firefox's reader view — in every generated app. `--reader` on `create`/`update`
+  makes it automatic per app. (#70)
+- Page zoom: ⌘+ / ⌘− / ⌘0 (View menu), persisted per app across launches.
 - Links that leave the wrapped site (clicks and `target=_blank`) now open in the system
   default browser instead of navigating the app window. Sign-in flows stay in-app via a
   built-in SSO-host exception list, and `mailto:`-style links are handed to macOS. It's a

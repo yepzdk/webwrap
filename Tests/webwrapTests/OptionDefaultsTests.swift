@@ -9,13 +9,13 @@ final class OptionDefaultsForCreateTests: XCTestCase {
     func testCoalescesFlagsAndTakesManifestBackground() {
         let seed = OptionDefaults.forCreate(
             width: 1200, height: 800, toolbar: false, toolbarStyle: .regular, progressBar: false,
-            handleURLs: false, openAnyURL: false, externalLinks: true,
+            handleURLs: false, openAnyURL: false, externalLinks: true, reader: false,
             iconPath: nil, manifestBackground: "#1a73e8", explicitBackground: nil,
             userAgent: nil,
             noSign: false, signIdentity: nil, notarize: false, notaryProfile: nil)
         XCTAssertEqual(seed, OptionSeed(
             width: 1200, height: 800, toolbar: false, toolbarStyle: .regular, progressBar: false,
-            handleURLs: false, openAnyURL: false, externalLinks: true,
+            handleURLs: false, openAnyURL: false, externalLinks: true, reader: false,
             iconPath: nil, backgroundColor: "#1a73e8", userAgent: nil,
             noSign: false, signIdentity: nil, notarize: false, notaryProfile: nil))
     }
@@ -23,7 +23,7 @@ final class OptionDefaultsForCreateTests: XCTestCase {
     func testExplicitBackgroundOverridesManifest() {
         let seed = OptionDefaults.forCreate(
             width: 1200, height: 800, toolbar: false, toolbarStyle: .regular, progressBar: false,
-            handleURLs: false, openAnyURL: false, externalLinks: true,
+            handleURLs: false, openAnyURL: false, externalLinks: true, reader: false,
             iconPath: nil, manifestBackground: "#1a73e8", explicitBackground: "#ff0000",
             userAgent: nil,
             noSign: false, signIdentity: nil, notarize: false, notaryProfile: nil)
@@ -33,7 +33,7 @@ final class OptionDefaultsForCreateTests: XCTestCase {
     func testCarriesExplicitFlagValues() {
         let seed = OptionDefaults.forCreate(
             width: 1000, height: 700, toolbar: true, toolbarStyle: .compact, progressBar: true,
-            handleURLs: true, openAnyURL: true, externalLinks: false,
+            handleURLs: true, openAnyURL: true, externalLinks: false, reader: true,
             iconPath: "/tmp/x.png", manifestBackground: nil, explicitBackground: nil,
             userAgent: "edge",
             noSign: true, signIdentity: "Developer ID Application: X", notarize: false, notaryProfile: nil)
@@ -45,6 +45,7 @@ final class OptionDefaultsForCreateTests: XCTestCase {
         XCTAssertTrue(seed.handleURLs)
         XCTAssertTrue(seed.openAnyURL)
         XCTAssertFalse(seed.externalLinks)
+        XCTAssertTrue(seed.reader)
         XCTAssertEqual(seed.iconPath, "/tmp/x.png")
         XCTAssertNil(seed.backgroundColor)
         XCTAssertEqual(seed.userAgent, "edge")
@@ -60,7 +61,7 @@ final class OptionDefaultsForUpdateTests: XCTestCase {
         progressBar: true, backgroundColor: "#0d1117",
         userAgent: "chrome",
         handleURLs: true, openAnyURL: false,
-        externalLinks: false)
+        externalLinks: false, reader: true)
 
     func testMapsPersistedConfigToSeed() {
         let seed = OptionDefaults.forUpdate(existing: existing)
@@ -74,6 +75,7 @@ final class OptionDefaultsForUpdateTests: XCTestCase {
         XCTAssertTrue(seed.handleURLs)
         XCTAssertFalse(seed.openAnyURL)
         XCTAssertFalse(seed.externalLinks)
+        XCTAssertTrue(seed.reader)
     }
 
     func testIconAndSigningAreNotSeededFromConfig() {
