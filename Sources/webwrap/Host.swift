@@ -66,6 +66,13 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     private var readerAuto = false
     private var isShowingReader = false
     private var suppressReaderOnce = false
+    /// Set between `loadHTMLString`-ing the reader document and its `didFinish`, so
+    /// that load is marked as the reader (not re-extracted — the reader page itself
+    /// is readerable).
+    private var pendingReaderRender = false
+    /// The article URL the current reader rendering was extracted from; the ⇧⌘R
+    /// toggle loads it to get back to the original page.
+    private var readerSourceURL: URL?
     /// An incoming URL (from `open -a` / Choosy / the GetURL Apple Event) received
     /// before the web view exists at cold launch. `applicationDidFinishLaunching` loads
     /// this instead of the baked-in home page when set.
@@ -499,37 +506,38 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
 
     @objc private func toggleReader(_ sender: Any?) {
         if isShowingReader {
-            // Back to the original page; the reload must not immediately re-enter.
+            // Back to the original page; its load must not immediately re-enter.
             suppressReaderOnce = true
             isShowingReader = false
-            webView.reload()
+            if let source = readerSourceURL {
+                webView.load(URLRequest(url: source))
+            } else {
+                webView.reload()
+            }
         } else {
             enterReader(manual: true)
         }
     }
 
-    /// Runs the Readability extraction on the current page and, on success, swaps in
-    /// the reader rendering in place. Failure leaves the page untouched: a beep for a
-    /// manual request, silence for the automatic path — never an error page.
+    /// Runs the Readability extraction on the current page and, on success, loads the
+    /// reader rendering as its OWN document (baseURL = the article, so relative image
+    /// URLs resolve). A new document — rather than an in-place DOM swap — because the
+    /// article page's still-running JS must die with its page: hydrating sites (e.g.
+    /// React re-rendering after didFinish) were reverting in-place swaps within a
+    /// second (#76). Failure leaves the page untouched: a beep for a manual request,
+    /// silence for the automatic path — never an error page.
     private func enterReader(manual: Bool) {
         webView.evaluateJavaScript(Reader.extractionScript) { [weak self] result, _ in
             guard let self else { return }
-            guard let article = Reader.decode(result),
-                  let script = ReaderPage.replacementScript(
-                      html: ReaderPage.html(article: article,
-                                            backgroundColor: self.backgroundColorRaw))
-            else {
+            guard let article = Reader.decode(result) else {
                 if manual { NSSound.beep() }
                 return
             }
-            self.webView.evaluateJavaScript(script) { [weak self] _, error in
-                guard let self else { return }
-                if error == nil {
-                    self.isShowingReader = true
-                } else if manual {
-                    NSSound.beep()
-                }
-            }
+            let html = ReaderPage.html(article: article,
+                                       backgroundColor: self.backgroundColorRaw)
+            self.readerSourceURL = self.webView.url
+            self.pendingReaderRender = true
+            self.webView.loadHTMLString(html, baseURL: self.readerSourceURL)
         }
     }
 
@@ -1076,15 +1084,22 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     // MARK: - Reader auto-entry (navigation delegate)
 
     // A new navigation means whatever it lands on is a fresh page, not our reader
-    // rendering (the reader swap itself is not a navigation, so it never hits this).
+    // rendering — except the reader document's own load, which is marked by
+    // `pendingReaderRender` and resolved in didFinish below.
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-        isShowingReader = false
+        if !pendingReaderRender { isShowingReader = false }
     }
 
     // Auto-reader: when baked on, try to enter the reader as soon as a real page
-    // finishes loading. Internal pages (start page, offline fallback) aren't web URLs
-    // and are skipped; a toggle back to the original suppresses one round.
+    // finishes loading. The reader document's own didFinish just marks it as showing;
+    // internal pages (start page, offline fallback) aren't web URLs and are skipped;
+    // a toggle back to the original suppresses one round.
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        if pendingReaderRender {
+            pendingReaderRender = false
+            isShowingReader = true
+            return
+        }
         if suppressReaderOnce {
             suppressReaderOnce = false
             return
