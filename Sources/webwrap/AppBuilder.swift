@@ -298,8 +298,13 @@ struct AppBuilder {
         // No icon path supplied: use a pre-resolved icon if the caller provided one
         // (the interactive flow does, to show the source in its summary), otherwise
         // resolve now (manifest → link icon → favicon). Every step is best-effort;
-        // on any failure we skip the icon and the app gets the default bundle icon.
-        guard let resolved = resolvedIcon ?? IconResolver(urlString: url)?.resolve() else { return }
+        // when nothing resolves (unreachable site, no icon anywhere, or a handler-only
+        // app with no site at all) we generate a fallback icon so the app never falls
+        // back to the generic macOS default.
+        guard let resolved = resolvedIcon ?? IconResolver(urlString: url)?.resolve() else {
+            try installFallbackIcon(into: dest)
+            return
+        }
 
         let tmpImage = (NSTemporaryDirectory() as NSString)
             .appendingPathComponent("webwrap-icon-\(UUID().uuidString).\(resolved.ext)")
@@ -312,6 +317,29 @@ struct AppBuilder {
             // than failing the whole build, but make it visible instead of mysterious.
             FileHandle.standardError.write(Data(
                 "⚠ Found an icon (\(resolved.source.rawValue)) but couldn't convert it to .icns — the app will use the default icon.\n".utf8))
+        }
+    }
+
+    /// Generates the fallback icon (a solid background-color square with the app's
+    /// monogram) and installs it via the same PNG → `.icns` pipeline as a real icon.
+    /// Relies only on `name` and `backgroundColor`, so it works for handler-only apps
+    /// with no site. Best-effort: a failure to draw or convert leaves the app with the
+    /// default bundle icon rather than failing the whole build, but is made visible.
+    private func installFallbackIcon(into dest: String) throws {
+        guard let png = FallbackIcon.pngData(background: backgroundColor, name: name) else {
+            FileHandle.standardError.write(Data(
+                "⚠ Couldn't generate a fallback icon — the app will use the default icon.\n".utf8))
+            return
+        }
+        let tmpImage = (NSTemporaryDirectory() as NSString)
+            .appendingPathComponent("webwrap-fallback-\(UUID().uuidString).png")
+        try png.write(to: URL(fileURLWithPath: tmpImage))
+        defer { try? fm.removeItem(atPath: tmpImage) }
+        do {
+            try convertPNGtoICNS(png: tmpImage, icns: dest)
+        } catch {
+            FileHandle.standardError.write(Data(
+                "⚠ Couldn't convert the generated fallback icon to .icns — the app will use the default icon.\n".utf8))
         }
     }
 

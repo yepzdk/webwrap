@@ -536,6 +536,12 @@ struct Create: ParsableCommand {
         }
         // The summary reports the actual resolved icon source when none was entered.
         let resolvedIcon = seed.iconPath == nil ? site.icon : nil
+        // Actively flag when neither a supplied nor a resolved icon exists, so the user
+        // knows the app will get a generated fallback (covers handler-only apps too,
+        // where `site.icon` is always nil).
+        if seed.iconPath == nil && site.icon == nil {
+            print("No icon found — using a generated fallback with the app's background color.")
+        }
 
         // Summary + confirm.
         let bundleIdentifier = AppBuilder.defaultBundleId(name: resolvedName, override: bundleId)
@@ -569,7 +575,7 @@ struct Create: ParsableCommand {
     private func iconSummary(seed: OptionSeed, resolvedIcon: IconResolver.Resolved?) -> String {
         if let path = seed.iconPath { return "from \(path)" }
         if let resolved = resolvedIcon { return resolved.source.rawValue }
-        return "none found — default icon"
+        return "none found — generated fallback"
     }
 
     /// Human description of the URL-handling choice for the summary.
