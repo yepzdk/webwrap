@@ -75,26 +75,12 @@ final class ReaderPageTests: XCTestCase {
         XCTAssertFalse(injected.contains("display:none"))
     }
 
-    func testIsAnInnerDocumentFragment() {
-        // documentElement.innerHTML accepts head+body, not a doctype/<html> wrapper.
+    func testIsACompleteStandaloneDocument() {
+        // Loaded via loadHTMLString as its own document — the doctype keeps WebKit in
+        // standards mode (see #76 for why the reader must be a separate document).
         let html = ReaderPage.html(article: article, backgroundColor: nil)
-        XCTAssertFalse(html.contains("<!doctype"))
-        XCTAssertFalse(html.contains("<html"))
-        XCTAssertTrue(html.hasPrefix("<head>"))
-        XCTAssertTrue(html.hasSuffix("</body>"))
-    }
-
-    func testReplacementScriptEmbedsHTMLJSONSafely() throws {
-        // Quotes, newlines, and unicode must survive the trip into a JS literal.
-        let tricky = "<p>\"quoted\"\nline två \\ backslash</p>"
-        let script = try XCTUnwrap(ReaderPage.replacementScript(html: tricky))
-        XCTAssertTrue(script.contains("document.documentElement.innerHTML"))
-        // The embedded JSON round-trips back to the original string. The literal sits
-        // between the wrapping "(" and the ")[0]" unwrap.
-        let start = try XCTUnwrap(script.range(of: "(")).upperBound
-        let end = try XCTUnwrap(script.range(of: ")[0]")).lowerBound
-        let json = String(script[start..<end])
-        let decoded = try JSONDecoder().decode([String].self, from: Data(json.utf8))
-        XCTAssertEqual(decoded, [tricky])
+        XCTAssertTrue(html.hasPrefix("<!doctype html>"))
+        XCTAssertTrue(html.contains("<html lang=\"en\">"))
+        XCTAssertTrue(html.hasSuffix("</html>"))
     }
 }

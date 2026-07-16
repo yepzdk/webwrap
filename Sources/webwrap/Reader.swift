@@ -50,11 +50,13 @@ enum Reader {
 /// document. Shares the `--bg` light/dark pattern (and background-color gating) with
 /// `StartPage`/`OfflineFallback`.
 enum ReaderPage {
-    /// The reader document as a `<head>…</head><body>…</body>` fragment — exactly
-    /// what `document.documentElement.innerHTML` accepts (a doctype/`<html>` wrapper
-    /// would be dropped anyway). Title and byline/site are escaped; `article.content`
-    /// is inserted as-is (it's the Readability-cleaned HTML of the page the user was
-    /// already viewing).
+    /// The complete reader document, loaded by the host as its OWN document via
+    /// `loadHTMLString(_:baseURL:)` with the article URL as base — so relative image
+    /// URLs keep resolving, and the article page's still-running JS dies with its
+    /// document. (An in-place DOM swap was reverted within a second on hydrating
+    /// sites — React re-rendering after `didFinish` — see #76.) Title and byline/site
+    /// are escaped; `article.content` is inserted as-is (it's the Readability-cleaned
+    /// HTML of the page the user was already viewing).
     static func html(article: Article, backgroundColor: String?) -> String {
         let title = OfflineFallback.escape(article.title)
         // Byline and site name merge into one muted meta line; either may be absent.
@@ -71,6 +73,8 @@ enum ReaderPage {
             bgRule = "background: var(--bg);"
         }
         return """
+        <!doctype html>
+        <html lang="en">
         <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -135,23 +139,7 @@ enum ReaderPage {
             <article>\(article.content)</article>
           </main>
         </body>
+        </html>
         """
-    }
-
-    /// JS that swaps `html` into the live document in place — no navigation, so
-    /// history stays clean and the article's relative URLs keep resolving against
-    /// the original document URL. The HTML rides in as a JSON string literal, which
-    /// survives any quotes/newlines/unicode it contains. Nil only if JSON encoding
-    /// fails (practically never for a String).
-    ///
-    /// ponytail: the original page's already-running JS isn't torn down — timers may
-    /// keep firing harmlessly against the replaced DOM. A separate about:reader-style
-    /// document is the upgrade path if a site ever misbehaves.
-    static func replacementScript(html: String) -> String? {
-        // Encoded as a one-element array (JSONEncoder wants a top-level container);
-        // [0] unwraps it in JS.
-        guard let data = try? JSONEncoder().encode([html]),
-              let literal = String(data: data, encoding: .utf8) else { return nil }
-        return "document.documentElement.innerHTML = (\(literal))[0]; window.scrollTo(0, 0);"
     }
 }

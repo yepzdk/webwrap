@@ -32,6 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   when the fallback is applied. (WEBWRAP-FE-001)
 
 ### Fixed
+- Reader view no longer gets wiped out on client-rendered sites (e.g. figma.com/blog):
+  it now renders as its own document, so the article page's still-running framework JS
+  can't re-render over it. (#76)
 - The offline fallback page was unreadable in dark mode (light background under
   light text).
 - The offline page's **Try Again** now retries the navigation that actually failed
