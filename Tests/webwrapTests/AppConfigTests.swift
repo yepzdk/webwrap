@@ -25,6 +25,7 @@ final class AppConfigParseTests: XCTestCase {
             "WebWrapOpenAnyURL": "1",
             "WebWrapProgressBar": "1",
             "WebWrapExternalLinks": "0",
+            "WebWrapReader": "1",
         ])
         XCTAssertEqual(AppConfig.parse(plistData: data),
                        AppConfig(url: "https://outlook.office.com", name: "Outlook",
@@ -33,7 +34,13 @@ final class AppConfigParseTests: XCTestCase {
                                  progressBar: true, backgroundColor: "#1a73e8",
                                  userAgent: "edge",
                                  handleURLs: true, openAnyURL: true,
-                                 externalLinks: false))
+                                 externalLinks: false, reader: true))
+    }
+
+    func testReaderDefaultsOffWhenAbsent() {
+        // Apps created before reader mode have no key — reader stays off.
+        let cfg = AppConfig.parse(plistData: plist(["WebWrapURL": "https://x.test"]))
+        XCTAssertEqual(cfg?.reader, false)
     }
 
     func testEmptyURLParsesAsHandlerOnly() {
@@ -141,7 +148,7 @@ final class AppConfigApplyTests: XCTestCase {
                                  progressBar: false, backgroundColor: "#123456",
                                  userAgent: "chrome",
                                  handleURLs: false, openAnyURL: false,
-                                 externalLinks: true)
+                                 externalLinks: true, reader: false)
 
     func testNoOverridesCarriesEverything() {
         XCTAssertEqual(base.applying(), base)
@@ -234,5 +241,12 @@ final class AppConfigApplyTests: XCTestCase {
         // A nil override (flag omitted on `update`) keeps the existing setting.
         let off = base.applying(externalLinks: false)
         XCTAssertFalse(off.applying(url: "https://new.test").externalLinks)
+    }
+
+    func testReaderOverrideTogglesAndCarriesOver() {
+        XCTAssertTrue(base.applying(reader: true).reader)
+        // A nil override (flag omitted on `update`) keeps the existing setting.
+        let on = base.applying(reader: true)
+        XCTAssertTrue(on.applying(url: "https://new.test").reader)
     }
 }

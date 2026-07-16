@@ -75,6 +75,10 @@ struct Update: ParsableCommand {
           help: "Open links that leave the site in the default browser. If omitted, the current setting is kept.")
     var externalLinks: Bool?
 
+    @Flag(name: .long, inversion: .prefixedNo,
+          help: "Open pages in the reader view automatically. If omitted, the current setting is kept.")
+    var reader: Bool?
+
     @Option(name: .long, help: "Set the window background color (hex, e.g. #1a73e8). If omitted, it follows the new --url's manifest, else the current setting is kept.")
     var backgroundColor: String?
 
@@ -132,7 +136,7 @@ struct Update: ParsableCommand {
         let anyOptionFlag = url != nil || name != nil || icon != nil || width != nil
             || height != nil || toolbar != nil || toolbarStyleFlag != nil
             || progressBar != nil || handleUrls != nil
-            || openAnyUrl != nil || externalLinks != nil
+            || openAnyUrl != nil || externalLinks != nil || reader != nil
             || backgroundColor != nil || noBackgroundColor
             || userAgent != nil || noUserAgent
             || sign != nil || noSign || notarize
@@ -189,7 +193,8 @@ struct Update: ParsableCommand {
                 handleURLs: seed.handleURLs,
                 openAnyURL: OptionDefaults.resolveOpenAnyURL(handleURLs: seed.handleURLs,
                                                              openAnyURL: seed.openAnyURL),
-                externalLinks: seed.externalLinks)
+                externalLinks: seed.externalLinks,
+                reader: seed.reader)
             iconOverride = seed.iconPath
             buildNoSign = seed.noSign
             buildSign = seed.signIdentity
@@ -218,7 +223,7 @@ struct Update: ParsableCommand {
                                        userAgent: OptionDefaults.resolveUpdateUserAgent(
                                            explicit: userAgent, clear: noUserAgent),
                                        handleURLs: effectiveHandleURLs, openAnyURL: openAnyUrl,
-                                       externalLinks: externalLinks)
+                                       externalLinks: externalLinks, reader: reader)
         }
 
         try Create.validateSigning(noSign: buildNoSign, sign: buildSign,
@@ -251,6 +256,9 @@ struct Update: ParsableCommand {
         }
         if merged.externalLinks != existing.externalLinks {
             changes.append("External links → \(merged.externalLinks ? "default browser" : "in-window")")
+        }
+        if merged.reader != existing.reader {
+            changes.append("Reader mode → \(merged.reader ? "automatic" : "manual (⇧⌘R)")")
         }
         if merged.backgroundColor != existing.backgroundColor {
             changes.append("Background → \(merged.backgroundColor ?? "default")")
@@ -311,7 +319,8 @@ struct Update: ParsableCommand {
             userAgent: merged.userAgent,
             handleURLs: merged.handleURLs,
             openAnyURL: merged.openAnyURL,
-            externalLinks: merged.externalLinks
+            externalLinks: merged.externalLinks,
+            reader: merged.reader
         )
         let newPath = try builder.build()
 
@@ -383,6 +392,10 @@ struct Create: ParsableCommand {
     @Flag(name: .long, inversion: .prefixedNo,
           help: "Open links that leave the site in the default browser (sign-in flows stay in-app). On by default.")
     var externalLinks: Bool = true
+
+    @Flag(name: .long, inversion: .prefixedNo,
+          help: "Open pages in the distraction-free reader view automatically (Readability). Off by default; ⇧⌘R toggles it on any page either way.")
+    var reader: Bool = false
 
     @Option(name: .long, help: "Hex color painted behind the page on launch (e.g. #1a73e8). Overrides the site manifest's color.")
     var backgroundColor: String?
@@ -468,6 +481,7 @@ struct Create: ParsableCommand {
             // Handler-only apps must receive links to be useful, so --no-url forces both.
             handleURLs: effectiveHandleURLs || noUrl, openAnyURL: openAnyUrl || noUrl,
             externalLinks: externalLinks,
+            reader: reader,
             iconPath: icon, manifestBackground: manifest.launchBackgroundColor,
             explicitBackground: backgroundColor, userAgent: userAgent,
             noSign: noSign, signIdentity: sign, notarize: notarize, notaryProfile: notaryProfile)
@@ -558,6 +572,7 @@ struct Create: ParsableCommand {
           Progress:    \(seed.progressBar ? "yes" : "no")
           Handle URLs: \(handleURLsSummary(seed: seed))
           Ext. links:  \(seed.externalLinks ? "default browser" : "in-window")
+          Reader:      \(seed.reader ? "automatic" : "manual (⇧⌘R)")
           Background:  \(seed.backgroundColor ?? "default")
           User agent:  \(seed.userAgent ?? "safari (default)")
           Signing:     \(Self.signingDescription(noSign: seed.noSign, sign: seed.signIdentity, notarize: seed.notarize))
@@ -620,7 +635,8 @@ struct Create: ParsableCommand {
             handleURLs: seed.handleURLs,
             openAnyURL: OptionDefaults.resolveOpenAnyURL(handleURLs: seed.handleURLs,
                                                          openAnyURL: seed.openAnyURL),
-            externalLinks: seed.externalLinks
+            externalLinks: seed.externalLinks,
+            reader: seed.reader
         )
         let appPath = try builder.build()
         print("✓ Created \(appPath)")

@@ -34,6 +34,9 @@ struct AppConfig: Equatable {
     /// Whether links that leave the site open in the system default browser. On by
     /// default; `--no-external-links` opts out.
     var externalLinks: Bool
+    /// Whether page loads auto-enter the distraction-free reader view. Off by
+    /// default; `--reader`. (The manual ⇧⌘R toggle exists in every app regardless.)
+    var reader: Bool
 
     /// Whether this is a handler-only app (created with `--no-url`): no home site —
     /// it opens to a built-in start page and exists to receive links.
@@ -66,6 +69,7 @@ struct AppConfig: Equatable {
         // Default-ON bool (unlike plistBool): absent — an app created before the
         // option existed — reads as on, so older apps adopt the default behavior.
         let externalLinks = (dict["WebWrapExternalLinks"] as? String).map { $0 == "1" } ?? true
+        let reader = plistBool(dict["WebWrapReader"])
         return AppConfig(url: url, name: name, bundleId: bundleId,
                          width: width, height: height, showToolbar: showToolbar,
                          toolbarStyle: toolbarStyle,
@@ -73,7 +77,7 @@ struct AppConfig: Equatable {
                          backgroundColor: backgroundColor,
                          userAgent: userAgent,
                          handleURLs: handleURLs, openAnyURL: openAnyURL,
-                         externalLinks: externalLinks)
+                         externalLinks: externalLinks, reader: reader)
     }
 
     /// Reads a `WebWrap*` boolean plist value, stored as the string "1"/"0". Absent or
@@ -103,7 +107,8 @@ struct AppConfig: Equatable {
                   userAgent: String?? = nil,
                   handleURLs: Bool? = nil,
                   openAnyURL: Bool? = nil,
-                  externalLinks: Bool? = nil) -> AppConfig {
+                  externalLinks: Bool? = nil,
+                  reader: Bool? = nil) -> AppConfig {
         AppConfig(
             url: url ?? self.url,
             name: name ?? self.name,
@@ -118,6 +123,7 @@ struct AppConfig: Equatable {
             userAgent: userAgent ?? self.userAgent,
             handleURLs: handleURLs ?? self.handleURLs,
             openAnyURL: openAnyURL ?? self.openAnyURL,
-            externalLinks: externalLinks ?? self.externalLinks)
+            externalLinks: externalLinks ?? self.externalLinks,
+            reader: reader ?? self.reader)
     }
 }

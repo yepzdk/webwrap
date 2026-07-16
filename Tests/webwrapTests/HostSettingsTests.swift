@@ -137,6 +137,25 @@ final class HostSettingsTests: XCTestCase {
         XCTAssertNil(HostSettings.userAgent(store: store, bakedDefault: "edge"))
     }
 
+    // MARK: - Page zoom
+
+    func testZoomDefaultsToOneWhenUnsetOrGarbled() {
+        let store = MemoryStore()
+        XCTAssertEqual(HostSettings.zoom(store: store), 1.0)
+        store.set("not a number", forKey: HostSettings.Key.zoom)
+        XCTAssertEqual(HostSettings.zoom(store: store), 1.0)
+    }
+
+    func testZoomRoundTripsAndClamps() {
+        let store = MemoryStore()
+        HostSettings.setZoom(1.3, store: store)
+        XCTAssertEqual(HostSettings.zoom(store: store), 1.3)
+        // Out-of-range values clamp on write and on read.
+        HostSettings.setZoom(9.0, store: store)
+        XCTAssertEqual(HostSettings.zoom(store: store), HostSettings.zoomRange.upperBound)
+        XCTAssertEqual(HostSettings.clampZoom(0.01), HostSettings.zoomRange.lowerBound)
+    }
+
     // MARK: - Restore defaults
 
     func testRestoreDefaultsClearsAllOverrides() {
@@ -146,6 +165,7 @@ final class HostSettingsTests: XCTestCase {
         HostSettings.setProgressBar(true, store: store)
         HostSettings.setBackgroundColor("#abcdef", store: store)
         HostSettings.setUserAgent("chrome", store: store)
+        HostSettings.setZoom(2.0, store: store)
 
         HostSettings.restoreDefaults(store: store)
 
@@ -157,6 +177,7 @@ final class HostSettingsTests: XCTestCase {
         XCTAssertNil(HostSettings.backgroundColor(store: store, bakedDefault: nil))
         XCTAssertEqual(HostSettings.userAgent(store: store, bakedDefault: "edge"), "edge")
         XCTAssertNil(HostSettings.userAgent(store: store, bakedDefault: nil))
+        XCTAssertEqual(HostSettings.zoom(store: store), 1.0)
     }
 }
 

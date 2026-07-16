@@ -50,6 +50,9 @@ struct AppBuilder {
     /// Whether links that leave the site open in the system default browser. On by
     /// default. (`--no-external-links` opts out.)
     var externalLinks: Bool = true
+    /// Whether page loads auto-enter the distraction-free reader view. Off by
+    /// default. (`--reader`.)
+    var reader: Bool = false
 
     private let fm = FileManager.default
 
@@ -147,6 +150,7 @@ struct AppBuilder {
             handleURLs: handleURLs,
             openAnyURL: openAnyURL,
             externalLinks: externalLinks,
+            reader: reader,
             creatorVersion: WebWrap.configuration.version
         )
     }
@@ -169,6 +173,7 @@ struct AppBuilder {
                               handleURLs: Bool = false,
                               openAnyURL: Bool = false,
                               externalLinks: Bool = true,
+                              reader: Bool = false,
                               creatorVersion: String) -> String {
         let escapedName = xmlEscape(name)
         let escapedURL = xmlEscape(url)
@@ -270,6 +275,8 @@ struct AppBuilder {
             <string>\(openAnyURL ? "1" : "0")</string>
             <key>WebWrapExternalLinks</key>
             <string>\(externalLinks ? "1" : "0")</string>
+            <key>WebWrapReader</key>
+            <string>\(reader ? "1" : "0")</string>
             \(backgroundColorEntry)\(userAgentEntry)\(urlTypesEntry)<key>WebWrapCreatorVersion</key>
             <string>\(escapedCreator)</string>
         </dict>
