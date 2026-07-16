@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   built-in start page and exists to receive links (URL handling is enabled
   automatically). Convert to a site app later with `update --url`. `list` shows these
   as `(handler-only)`. (#71)
+- Generated apps now get a **fallback icon** when no specific icon can be resolved: a
+  solid square in the app's theme/background color with the app's initial as a monogram,
+  instead of the generic macOS default icon. The interactive `create` flow notifies you
+  when the fallback is applied. (WEBWRAP-FE-001)
 
 ### Fixed
 - The offline fallback page was unreadable in dark mode (light background under
