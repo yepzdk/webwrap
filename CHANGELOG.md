@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Added
 - Reader view **appearance controls**: an "Aa" popover in the reader page adjusts font
   size, serif/sans, column width, line height, and theme (auto/light/sepia/dark/black),
-  persisted per app.
+  persisted per app. (#81)
 - Incoming links (Choosy, `open -a`, ⇧⌘O) are **cleaned before navigating**: tracking
   redirects that embed the real destination (TLDR newsletter, Google/Facebook/SafeLinks,
   Postmark) are unwrapped — so blocked tracking hosts (Pi-hole) no longer dead-end the
