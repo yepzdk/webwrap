@@ -34,6 +34,55 @@ final class ReaderDecodeTests: XCTestCase {
     }
 }
 
+final class ReaderSettingsTests: XCTestCase {
+    func testDecodesFullPayload() {
+        let payload: [String: Any] = ["fontSize": 21, "fontFamily": "sans", "width": "wide",
+                                      "lineHeight": "relaxed", "theme": "sepia"]
+        let settings = ReaderSettings.decode(payload)
+        XCTAssertEqual(settings.fontSize, 21)
+        XCTAssertEqual(settings.fontFamily, .sans)
+        XCTAssertEqual(settings.width, .wide)
+        XCTAssertEqual(settings.lineHeight, .relaxed)
+        XCTAssertEqual(settings.theme, .sepia)
+    }
+
+    func testPartialAndUnknownFieldsFallBackToDefaults() {
+        // A payload only naming some fields (or naming unknown values) keeps the
+        // defaults for the rest — a garbled popover message can't poison the reader.
+        let settings = ReaderSettings.decode(["theme": "black", "width": "ultrawide",
+                                              "fontFamily": 7])
+        XCTAssertEqual(settings.theme, .black)
+        XCTAssertEqual(settings.width, .normal)
+        XCTAssertEqual(settings.fontFamily, .serif)
+        XCTAssertEqual(settings.fontSize, 17)
+    }
+
+    func testGarbageDecodesToDefaults() {
+        XCTAssertEqual(ReaderSettings.decode(nil), ReaderSettings())
+        XCTAssertEqual(ReaderSettings.decode("not a dict"), ReaderSettings())
+        XCTAssertEqual(ReaderSettings.decode(NSNull()), ReaderSettings())
+        XCTAssertEqual(ReaderSettings.fromJSON(nil), ReaderSettings())
+        XCTAssertEqual(ReaderSettings.fromJSON("not json"), ReaderSettings())
+    }
+
+    func testFontSizeIsClamped() {
+        XCTAssertEqual(ReaderSettings.decode(["fontSize": 6]).fontSize,
+                       ReaderSettings.fontSizeRange.lowerBound)
+        XCTAssertEqual(ReaderSettings.decode(["fontSize": 90]).fontSize,
+                       ReaderSettings.fontSizeRange.upperBound)
+    }
+
+    func testJSONRoundTrip() {
+        var settings = ReaderSettings()
+        settings.fontSize = 14
+        settings.fontFamily = .sans
+        settings.width = .narrow
+        settings.lineHeight = .compact
+        settings.theme = .dark
+        XCTAssertEqual(ReaderSettings.fromJSON(settings.json), settings)
+    }
+}
+
 final class ReaderExtractionScriptTests: XCTestCase {
     func testContainsVendoredSourcesAndGate() {
         let script = Reader.extractionScript
@@ -73,6 +122,56 @@ final class ReaderPageTests: XCTestCase {
                                        backgroundColor: "red; } body { display:none")
         XCTAssertTrue(injected.contains("background: var(--bg);"))
         XCTAssertFalse(injected.contains("display:none"))
+    }
+
+    func testDefaultSettingsBakeStockDesign() {
+        let html = ReaderPage.html(article: article, backgroundColor: nil)
+        XCTAssertTrue(html.contains("--reader-size: 17px;"))
+        XCTAssertTrue(html.contains("--reader-leading: 1.6;"))
+        XCTAssertTrue(html.contains("--reader-width: 42rem;"))
+        XCTAssertTrue(html.contains("--reader-font: ui-serif, \"New York\", Georgia, serif;"))
+        // Auto theme = no data-theme attribute, appearance follows the system.
+        XCTAssertTrue(html.contains("<html lang=\"en\">"))
+    }
+
+    func testSettingsAreBakedIntoVarsAndTheme() {
+        var settings = ReaderSettings()
+        settings.fontSize = 22
+        settings.fontFamily = .sans
+        settings.width = .wide
+        settings.lineHeight = .relaxed
+        settings.theme = .sepia
+        let html = ReaderPage.html(article: article, settings: settings, backgroundColor: nil)
+        XCTAssertTrue(html.contains("<html lang=\"en\" data-theme=\"sepia\">"))
+        XCTAssertTrue(html.contains("--reader-size: 22px;"))
+        XCTAssertTrue(html.contains("--reader-leading: 1.8;"))
+        XCTAssertTrue(html.contains("--reader-width: 52rem;"))
+        XCTAssertTrue(html.contains("--reader-font: -apple-system,"))
+        // The popover script is seeded with the same settings it renders.
+        XCTAssertTrue(html.contains(settings.json))
+    }
+
+    func testExplicitThemeOverridesBakedBackground() {
+        // A baked background color still applies in auto theme, but the rule that pins
+        // explicit themes to their palette must be present so it wins when set.
+        var settings = ReaderSettings()
+        settings.theme = .black
+        let html = ReaderPage.html(article: article, settings: settings,
+                                   backgroundColor: "#1a73e8")
+        XCTAssertTrue(html.contains("background: #1a73e8;"))
+        XCTAssertTrue(html.contains(":root[data-theme] body { background: var(--bg); }"))
+        XCTAssertTrue(html.contains("data-theme=\"black\""))
+    }
+
+    func testContainsAppearancePopoverAndBridge() {
+        let html = ReaderPage.html(article: article, backgroundColor: nil)
+        XCTAssertTrue(html.contains("id=\"readerAa\""))
+        XCTAssertTrue(html.contains("messageHandlers.webwrapReader.postMessage"))
+        // Every adjustable value has a control.
+        for value in ["serif", "sans", "narrow", "normal", "wide",
+                      "compact", "relaxed", "auto", "light", "sepia", "dark", "black"] {
+            XCTAssertTrue(html.contains("data-value=\"\(value)\""), value)
+        }
     }
 
     func testIsACompleteStandaloneDocument() {

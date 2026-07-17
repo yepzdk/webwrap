@@ -166,6 +166,7 @@ final class HostSettingsTests: XCTestCase {
         HostSettings.setBackgroundColor("#abcdef", store: store)
         HostSettings.setUserAgent("chrome", store: store)
         HostSettings.setZoom(2.0, store: store)
+        HostSettings.setReaderSettingsJSON(#"{"theme":"sepia"}"#, store: store)
 
         HostSettings.restoreDefaults(store: store)
 
@@ -178,6 +179,7 @@ final class HostSettingsTests: XCTestCase {
         XCTAssertEqual(HostSettings.userAgent(store: store, bakedDefault: "edge"), "edge")
         XCTAssertNil(HostSettings.userAgent(store: store, bakedDefault: nil))
         XCTAssertEqual(HostSettings.zoom(store: store), 1.0)
+        XCTAssertNil(HostSettings.readerSettingsJSON(store: store))
     }
 }
 

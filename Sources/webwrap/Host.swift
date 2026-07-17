@@ -187,6 +187,8 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         config.applicationNameForUserAgent = UserAgent.safariApplicationName
         // The offline fallback page's Retry button posts here to reload the intended URL.
         config.userContentController.add(self, name: "webwrapRetry")
+        // The reader page's "Aa" popover posts appearance settings here to persist them.
+        config.userContentController.add(self, name: "webwrapReader")
 
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: width, height: height),
@@ -559,7 +561,10 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
                 if manual { NSSound.beep() }
                 return
             }
+            let settings = ReaderSettings.fromJSON(
+                HostSettings.readerSettingsJSON(store: self.settingsStore))
             let html = ReaderPage.html(article: article,
+                                       settings: settings,
                                        backgroundColor: self.backgroundColorRaw)
             self.readerSourceURL = self.webView.url
             self.pendingReaderRender = true
@@ -1198,20 +1203,30 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         }
     }
 
-    // Retry button on the fallback page posts here; retry the failed navigation
-    // (falling back to home when the failing URL wasn't recoverable from the error).
+    // Our injected pages post here: the fallback page's Retry button and the reader
+    // page's "Aa" appearance popover. The handlers are controller-wide, so the live
+    // site's JS could also post to them — each message is only honored while its page
+    // is actually showing, tracked explicitly rather than inferred from webView.url,
+    // whose value after loadHTMLString isn't something we want to depend on.
     func userContentController(_ userContentController: WKUserContentController,
                                didReceive message: WKScriptMessage) {
-        // The message handler is controller-wide, so the live site's JS could also post
-        // to it. Only honor Retry while the fallback page is actually showing — tracked
-        // explicitly rather than inferred from webView.url, whose value after
-        // loadHTMLString isn't something we want to depend on.
-        guard message.name == "webwrapRetry", isShowingFallback else { return }
-        if let failedURL {
-            isShowingFallback = false
-            webView.load(URLRequest(url: failedURL))
-        } else {
-            loadIntendedURL()
+        switch message.name {
+        case "webwrapRetry":
+            guard isShowingFallback else { return }
+            if let failedURL {
+                isShowingFallback = false
+                webView.load(URLRequest(url: failedURL))
+            } else {
+                loadIntendedURL()
+            }
+        case "webwrapReader":
+            // pendingReaderRender covers the window between loadHTMLString and its
+            // didFinish, where the reader is on screen but not yet marked as showing.
+            guard isShowingReader || pendingReaderRender else { return }
+            let settings = ReaderSettings.decode(message.body)
+            HostSettings.setReaderSettingsJSON(settings.json, store: settingsStore)
+        default:
+            break
         }
     }
 }
