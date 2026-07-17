@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-07-17
+
 ### Added
 - Reader view **appearance controls**: an "Aa" popover in the reader page adjusts font
   size, serif/sans, column width, line height, and theme (auto/light/sepia/dark/black),
