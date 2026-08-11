@@ -128,6 +128,38 @@ final class ResolveUpdateBackgroundTests: XCTestCase {
     }
 }
 
+final class ColorValidatorTests: XCTestCase {
+    // The validator backs step 8 of the interactive create/update flow. Empty input is
+    // handled upstream by askWithDefault (keeps the default); these cover non-empty input.
+
+    private func value(_ input: String) -> String?? {
+        guard case .valid(let v) = colorValidator(input) else { return nil }
+        return .some(v)
+    }
+
+    func testSentinelClears() {
+        // `none`, case-insensitively, is an explicit clear → .valid(nil).
+        for token in ["none", "NONE", "None"] {
+            guard case .some(let inner) = value(token) else {
+                return XCTFail("expected .valid for \(token)")
+            }
+            XCTAssertNil(inner, "\(token) should clear the color")
+        }
+    }
+
+    func testValidHexPassesThroughVerbatim() {
+        XCTAssertEqual(value("#1a73e8"), .some(.some("#1a73e8")))
+    }
+
+    func testGarbageIsInvalid() {
+        for token in ["nope", "blue"] {
+            guard case .invalid = colorValidator(token) else {
+                return XCTFail("expected .invalid for \(token)")
+            }
+        }
+    }
+}
+
 final class ResolveUpdateUserAgentTests: XCTestCase {
     // The result is a String??: nil = carry over, .some(nil) = reset, .some(x) = set.
 
