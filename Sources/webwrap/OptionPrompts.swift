@@ -222,7 +222,7 @@ func promptForOptions(seed: OptionSeed, context: PromptContext,
 
     // Step 8 — background color.
     Prompt.step(8, of: total, title: "Background color",
-                help: "A hex color (e.g. #1a73e8) painted behind the page to avoid\na white flash on launch. Blank for none.")
+                help: "A hex color (e.g. #1a73e8) painted behind the page to avoid\na white flash on launch. Blank keeps the shown default; 'none' clears it.")
     let bgDefaultDisplay = seed.backgroundColor ?? "none"
     guard let background = Prompt.askWithDefault(
         "Window background color", default: seed.backgroundColor, defaultDisplay: bgDefaultDisplay,
@@ -307,11 +307,19 @@ private func intValidator(_ input: String) -> Prompt.Validation<Int> {
     return .valid(value)
 }
 
-/// Accepts an empty-able hex color. Non-empty input must parse via `CSSColor`; the parsed
-/// presence is what matters — the original string is returned so it's stored verbatim.
-private func colorValidator(_ input: String) -> Prompt.Validation<String?> {
+/// Sentinel typed at the background-color prompt to explicitly clear an existing color.
+/// `CSSColor.parse` only accepts `#`-prefixed hex, so this can't collide with a real color.
+let clearBackgroundSentinel = "none"
+
+/// Accepts an empty-able hex color. The `none` sentinel clears the color (`.valid(nil)`);
+/// other non-empty input must parse via `CSSColor` — the parsed presence is what matters,
+/// so the original string is returned to be stored verbatim.
+func colorValidator(_ input: String) -> Prompt.Validation<String?> {
+    if input.lowercased() == clearBackgroundSentinel {
+        return .valid(nil)
+    }
     guard CSSColor.parse(input) != nil else {
-        return .invalid("Use a hex color like #1a73e8 (or leave blank).")
+        return .invalid("Use a hex color like #1a73e8, 'none' to clear, or leave blank to keep.")
     }
     return .valid(input)
 }

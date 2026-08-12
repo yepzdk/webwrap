@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- Interactive `update` can now clear a window background color by entering `none` at the
+  background-color prompt — parity with `--no-background-color`.
+
 ## [0.7.0] - 2026-07-17
 
 ### Added
