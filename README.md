@@ -167,6 +167,8 @@ Every generated app has a **reader view**: press **⇧⌘R** (View → Toggle Re
 
 The reader's appearance is adjustable: click the **Aa** button in the top-right corner of a reader page to set font size, serif or sans-serif type, column width, line height, and theme (auto, light, sepia, dark, or black). Changes apply instantly and persist per app; the app's Settings window (⌘,) → Restore Defaults returns the stock design.
 
+Next to it, the **list button** opens the reader's recents: the last 30 articles read in that app, newest first. Click a title to go back to it. The list is per app and survives relaunch; Restore Defaults clears it.
+
 Pass `--reader` to make it automatic — every page that looks like an article opens as a reader page (pages that don't, load normally). Combined with a handler-only app, that's a standalone reading app for a browser picker like Choosy:
 
 ```sh

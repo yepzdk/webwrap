@@ -189,6 +189,8 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         config.userContentController.add(self, name: "webwrapRetry")
         // The reader page's "Aa" popover posts appearance settings here to persist them.
         config.userContentController.add(self, name: "webwrapReader")
+        // The reader page's recents popover posts a chosen article URL here to navigate.
+        config.userContentController.add(self, name: "webwrapReaderOpen")
 
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: width, height: height),
@@ -563,10 +565,19 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
             }
             let settings = ReaderSettings.fromJSON(
                 HostSettings.readerSettingsJSON(store: self.settingsStore))
+            self.readerSourceURL = self.webView.url
+            // Record before rendering so the article being opened is the panel's top row
+            // — both entry paths (⇧⌘R and auto-reader) come through here.
+            var history = ReaderHistory.fromJSON(
+                HostSettings.readerHistoryJSON(store: self.settingsStore))
+            if let source = self.readerSourceURL {
+                history.record(title: article.title, url: source.absoluteString)
+                HostSettings.setReaderHistoryJSON(history.json, store: self.settingsStore)
+            }
             let html = ReaderPage.html(article: article,
                                        settings: settings,
+                                       history: history,
                                        backgroundColor: self.backgroundColorRaw)
-            self.readerSourceURL = self.webView.url
             self.pendingReaderRender = true
             self.webView.loadHTMLString(html, baseURL: self.readerSourceURL)
         }
@@ -1204,7 +1215,7 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     }
 
     // Our injected pages post here: the fallback page's Retry button and the reader
-    // page's "Aa" appearance popover. The handlers are controller-wide, so the live
+    // page's "Aa" appearance and recents popovers. The handlers are controller-wide, so the live
     // site's JS could also post to them — each message is only honored while its page
     // is actually showing, tracked explicitly rather than inferred from webView.url,
     // whose value after loadHTMLString isn't something we want to depend on.
@@ -1225,6 +1236,16 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
             guard isShowingReader || pendingReaderRender else { return }
             let settings = ReaderSettings.decode(message.body)
             HostSettings.setReaderSettingsJSON(settings.json, store: settingsStore)
+        case "webwrapReaderOpen":
+            guard isShowingReader || pendingReaderRender,
+                  let raw = message.body as? String, let url = URL(string: raw) else { return }
+            // Routed like any incoming link: domain scoping still applies, so a stale
+            // entry from before an `update --url` can't navigate off-site. Leaving the
+            // reader means the next load must not be re-extracted by the toggle path,
+            // but auto-reader apps should still re-enter — so only the explicit reader
+            // state is cleared here.
+            isShowingReader = false
+            openIncoming(url)
         default:
             break
         }

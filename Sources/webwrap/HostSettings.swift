@@ -56,6 +56,9 @@ enum HostSettings {
         /// Reader appearance settings (a `ReaderSettings` JSON blob) — plain persisted
         /// state like zoom; absent means the stock reader design.
         static let readerSettings = "webwrap.reader.settings"
+        /// The reader's recents list (a `ReaderHistory` JSON blob) — plain persisted
+        /// state like the settings above; absent means nothing has been read yet.
+        static let readerHistory = "webwrap.reader.history"
     }
 
     /// The minimal read/write surface `HostSettings` needs from a key-value store.
@@ -143,6 +146,18 @@ enum HostSettings {
         store.set(value, forKey: Key.readerSettings)
     }
 
+    // MARK: - Reader history
+
+    /// The persisted reader-history JSON, nil when nothing has been read in the reader.
+    /// (De)serialization lives in `ReaderHistory`; this layer only stores the string.
+    static func readerHistoryJSON(store: Store) -> String? {
+        store.string(forKey: Key.readerHistory)
+    }
+
+    static func setReaderHistoryJSON(_ value: String, store: Store) {
+        store.set(value, forKey: Key.readerHistory)
+    }
+
     // MARK: - Writing overrides
 
     static func setToolbar(_ value: Bool, store: Store) {
@@ -184,6 +199,7 @@ enum HostSettings {
         store.remove(forKey: Key.userAgent)
         store.remove(forKey: Key.zoom)
         store.remove(forKey: Key.readerSettings)
+        store.remove(forKey: Key.readerHistory)
     }
 }
 

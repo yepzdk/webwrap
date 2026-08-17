@@ -167,6 +167,8 @@ final class HostSettingsTests: XCTestCase {
         HostSettings.setUserAgent("chrome", store: store)
         HostSettings.setZoom(2.0, store: store)
         HostSettings.setReaderSettingsJSON(#"{"theme":"sepia"}"#, store: store)
+        HostSettings.setReaderHistoryJSON(#"[{"title":"T","url":"https://example.com/"}]"#,
+                                          store: store)
 
         HostSettings.restoreDefaults(store: store)
 
@@ -180,6 +182,19 @@ final class HostSettingsTests: XCTestCase {
         XCTAssertNil(HostSettings.userAgent(store: store, bakedDefault: nil))
         XCTAssertEqual(HostSettings.zoom(store: store), 1.0)
         XCTAssertNil(HostSettings.readerSettingsJSON(store: store))
+        XCTAssertNil(HostSettings.readerHistoryJSON(store: store))
+    }
+
+    // MARK: - Reader history
+
+    func testReaderHistoryJSONRoundTrips() {
+        let store = MemoryStore()
+        XCTAssertNil(HostSettings.readerHistoryJSON(store: store))
+        var history = ReaderHistory()
+        history.record(title: "An article", url: "https://example.com/a")
+        HostSettings.setReaderHistoryJSON(history.json, store: store)
+        XCTAssertEqual(ReaderHistory.fromJSON(HostSettings.readerHistoryJSON(store: store)),
+                       history)
     }
 }
 

@@ -174,6 +174,40 @@ final class ReaderPageTests: XCTestCase {
         }
     }
 
+    func testRecentsPanelListsTitlesAndEscapesThem() {
+        var history = ReaderHistory()
+        history.record(title: "Older piece", url: "https://news.example.com/older")
+        history.record(title: "Tips & <script>", url: "https://blog.example.com/tips?a=1")
+        let html = ReaderPage.html(article: article, history: history, backgroundColor: nil)
+        XCTAssertTrue(html.contains("id=\"readerRecentsBtn\""))
+        XCTAssertTrue(html.contains("messageHandlers.webwrapReaderOpen.postMessage"))
+        // Newest first, titles escaped — they come from other sites' pages.
+        XCTAssertTrue(html.contains("Tips &amp; &lt;script&gt;"))
+        XCTAssertFalse(html.contains("<script>Tips"))
+        XCTAssertTrue(html.contains("data-url=\"https://blog.example.com/tips?a=1\""))
+        // The host is shown as a second line on each row.
+        XCTAssertTrue(html.contains("blog.example.com"))
+        XCTAssertTrue(html.contains("news.example.com"))
+        let newest = try? XCTUnwrap(html.range(of: "Tips &amp; &lt;script&gt;"))
+        let oldest = try? XCTUnwrap(html.range(of: "Older piece"))
+        XCTAssertTrue(newest!.lowerBound < oldest!.lowerBound)
+    }
+
+    func testRecentsPanelEmptyState() {
+        let html = ReaderPage.html(article: article, backgroundColor: nil)
+        XCTAssertTrue(html.contains("No recent articles"))
+        XCTAssertFalse(html.contains("data-url="))
+    }
+
+    func testRecentsRowTitleCannotBreakOutOfItsAttribute() {
+        // A crafted URL must not escape the data-url attribute into new markup.
+        var history = ReaderHistory()
+        history.record(title: "Evil", url: "https://example.com/\" onclick=\"alert(1)")
+        let html = ReaderPage.html(article: article, history: history, backgroundColor: nil)
+        XCTAssertFalse(html.contains("onclick=\"alert(1)\""))
+        XCTAssertTrue(html.contains("&quot; onclick=&quot;"))
+    }
+
     func testIsACompleteStandaloneDocument() {
         // Loaded via loadHTMLString as its own document — the doctype keeps WebKit in
         // standards mode (see #76 for why the reader must be a separate document).
