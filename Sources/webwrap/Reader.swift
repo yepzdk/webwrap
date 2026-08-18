@@ -199,9 +199,10 @@ enum ReaderPage {
             <span class="recent-title">\(OfflineFallback.escape(entry.title))</span>\(hostLine)</button>
             """
         }.joined(separator: "\n                ")
+        // The clear action only appears when there's something to clear.
         let recentsBody = history.entries.isEmpty
             ? "<p class=\"recent-empty\">No recent articles</p>"
-            : recentRows
+            : recentRows + "\n                <button id=\"readerClear\">Clear history</button>"
         return """
         <!doctype html>
         <html lang="en"\(themeAttr)>
@@ -317,7 +318,12 @@ enum ReaderPage {
           #readerPanel[hidden], #readerRecents[hidden] { display: none; }
           /* Recents: a plain list of titles. Padding is on the rows, so the panel itself
              sheds its gap and lets a long list scroll instead of running off-screen. */
-          #readerRecents { width: 280px; padding: 6px; gap: 0; max-height: 60vh; overflow-y: auto; }
+          /* Anchored from its button's LEFT edge (unlike the Aa panel): it's the leftmost
+             control, so hanging 280px to the left would run off a narrow window. */
+          #readerRecents {
+            left: 0; right: auto; width: 280px; max-width: calc(100vw - 28px);
+            padding: 6px; gap: 0; max-height: 60vh; overflow-y: auto;
+          }
           .recent {
             display: block; width: 100%; padding: 7px 8px; border: 0; border-radius: 5px;
             background: transparent; cursor: pointer; text-align: left;
@@ -329,6 +335,14 @@ enum ReaderPage {
           }
           .recent-host { display: block; margin-top: 2px; font-size: 11px; color: var(--muted); }
           .recent-empty { margin: 0; padding: 7px 8px; color: var(--muted); }
+          /* Clearing history lives next to the history itself — Restore Defaults is for
+             presentation settings and deliberately leaves user data alone. */
+          #readerClear {
+            margin: 4px 6px 2px; padding: 6px 8px; border: 0; border-top: 1px solid var(--border);
+            border-radius: 0; background: transparent; cursor: pointer; text-align: left;
+            font-family: inherit; font-size: 11px; color: var(--muted);
+          }
+          #readerClear:hover { color: var(--fg); }
           .seg { display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
           .seg button {
             flex: 1; padding: 7px 0; border: 0; background: transparent; cursor: pointer;
@@ -374,7 +388,7 @@ enum ReaderPage {
                 </svg>
               </button>
               <div id="readerRecents" hidden aria-labelledby="readerRecentsTitle">
-                <h2 class="panel-title" id="readerRecentsTitle">Last \(ReaderHistory.limit) reads</h2>
+                <h2 class="panel-title" id="readerRecentsTitle">Recent articles</h2>
                 \(recentsBody)
               </div>
             </div>
@@ -477,6 +491,17 @@ enum ReaderPage {
             // A recents row hands its URL to the host, which re-validates it against the
             // app's domain scope before navigating — the same path an incoming link takes.
             recents.addEventListener('click', function (e) {
+              if (e.target.closest('#readerClear')) {
+                // Empty the panel in place — the host clears the stored list.
+                recents.querySelectorAll('.recent, #readerClear').forEach(function (n) {
+                  n.remove();
+                });
+                recents.insertAdjacentHTML('beforeend',
+                  '<p class="recent-empty">No recent articles</p>');
+                try { window.webkit.messageHandlers.webwrapReaderClear.postMessage(''); }
+                catch (err) {}
+                return;
+              }
               var row = e.target.closest('button[data-url]');
               if (!row) { return; }
               setOpen(null);

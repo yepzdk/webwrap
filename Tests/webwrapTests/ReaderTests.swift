@@ -169,7 +169,7 @@ final class ReaderPageTests: XCTestCase {
         let html = ReaderPage.html(article: article, backgroundColor: nil)
         XCTAssertTrue(html.contains("title=\"Recent articles\""))
         XCTAssertTrue(html.contains("title=\"Text &amp; appearance\""))
-        XCTAssertTrue(html.contains(">Last \(ReaderHistory.limit) reads</h2>"))
+        XCTAssertTrue(html.contains(">Recent articles</h2>"))
         XCTAssertTrue(html.contains(">Text &amp; appearance</h2>"))
         XCTAssertTrue(html.contains("aria-labelledby=\"readerRecentsTitle\""))
         XCTAssertTrue(html.contains("aria-labelledby=\"readerPanelTitle\""))
@@ -212,6 +212,16 @@ final class ReaderPageTests: XCTestCase {
         let html = ReaderPage.html(article: article, backgroundColor: nil)
         XCTAssertTrue(html.contains("No recent articles"))
         XCTAssertFalse(html.contains("data-url="))
+        // Nothing to clear, so no clear action.
+        XCTAssertFalse(html.contains("id=\"readerClear\""))
+    }
+
+    func testRecentsPanelOffersClearWhenNonEmpty() {
+        var history = ReaderHistory()
+        history.record(title: "Something", url: "https://example.com/s")
+        let html = ReaderPage.html(article: article, history: history, backgroundColor: nil)
+        XCTAssertTrue(html.contains("id=\"readerClear\""))
+        XCTAssertTrue(html.contains("messageHandlers.webwrapReaderClear.postMessage"))
     }
 
     func testRecentsRowTitleCannotBreakOutOfItsAttribute() {

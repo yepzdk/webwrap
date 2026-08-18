@@ -199,7 +199,8 @@ enum HostSettings {
         store.remove(forKey: Key.userAgent)
         store.remove(forKey: Key.zoom)
         store.remove(forKey: Key.readerSettings)
-        store.remove(forKey: Key.readerHistory)
+        // NOT the reader history: it's user-generated data, not a presentation default,
+        // and this button offers no undo. Clearing it belongs behind its own affordance.
     }
 }
 

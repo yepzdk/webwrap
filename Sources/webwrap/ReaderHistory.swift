@@ -33,8 +33,9 @@ struct ReaderHistory: Equatable {
         if entries.count > Self.limit { entries.removeLast(entries.count - Self.limit) }
     }
 
-    /// The list as a JSON array string — the storage format, and (JSON being valid JS)
-    /// what the reader page's script is seeded with.
+    /// The list as a JSON array string — the storage format. The reader page does NOT
+    /// consume this: its rows are rendered (and escaped) in Swift from `entries`, so no
+    /// history data reaches the page as script.
     var json: String {
         let array = entries.map { ["title": $0.title, "url": $0.url] }
         guard let data = try? JSONSerialization.data(withJSONObject: array, options: [])

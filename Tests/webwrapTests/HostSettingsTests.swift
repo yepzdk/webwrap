@@ -167,8 +167,6 @@ final class HostSettingsTests: XCTestCase {
         HostSettings.setUserAgent("chrome", store: store)
         HostSettings.setZoom(2.0, store: store)
         HostSettings.setReaderSettingsJSON(#"{"theme":"sepia"}"#, store: store)
-        HostSettings.setReaderHistoryJSON(#"[{"title":"T","url":"https://example.com/"}]"#,
-                                          store: store)
 
         HostSettings.restoreDefaults(store: store)
 
@@ -182,7 +180,16 @@ final class HostSettingsTests: XCTestCase {
         XCTAssertNil(HostSettings.userAgent(store: store, bakedDefault: nil))
         XCTAssertEqual(HostSettings.zoom(store: store), 1.0)
         XCTAssertNil(HostSettings.readerSettingsJSON(store: store))
-        XCTAssertNil(HostSettings.readerHistoryJSON(store: store))
+    }
+
+    func testRestoreDefaultsKeepsReaderHistory() {
+        // History is user-generated data, not a presentation default — an appearance
+        // reset must not silently delete it (cleared from the reader panel instead).
+        let store = MemoryStore()
+        let stored = #"[{"title":"T","url":"https://example.com/"}]"#
+        HostSettings.setReaderHistoryJSON(stored, store: store)
+        HostSettings.restoreDefaults(store: store)
+        XCTAssertEqual(HostSettings.readerHistoryJSON(store: store), stored)
     }
 
     // MARK: - Reader history
