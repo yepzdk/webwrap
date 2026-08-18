@@ -245,6 +245,47 @@ final class ReaderPageTests: XCTestCase {
         XCTAssertTrue(html.contains("&quot; onclick=&quot;"))
     }
 
+    func testHasAReadingProgressBar() {
+        let html = ReaderPage.html(article: article, backgroundColor: nil)
+        XCTAssertTrue(html.contains("id=\"readerProgress\""))
+        // Themed, so it follows the chosen palette rather than a fixed color.
+        XCTAssertTrue(html.contains("background: var(--accent);"))
+        // Matches the native load line's height so the two read as one idiom.
+        XCTAssertTrue(html.contains("height: 2.5px;"))
+        // Decorative: a scroll fraction is nothing for a screen reader to announce.
+        XCTAssertTrue(html.contains("aria-hidden=\"true\"></div>"))
+    }
+
+    func testProgressBarStartsHiddenAndScalesRatherThanResizes() {
+        let html = ReaderPage.html(article: article, backgroundColor: nil)
+        // Hidden until the script confirms the article scrolls — otherwise a short piece
+        // would show a permanently full bar.
+        XCTAssertTrue(html.contains("<div id=\"readerProgress\" hidden"))
+        XCTAssertTrue(html.contains("transform: scaleX(0);"))
+        XCTAssertTrue(html.contains("transform-origin: left center;"))
+        // scaleX composites; animating width would force layout every frame.
+        XCTAssertTrue(html.contains("'scaleX(' + fraction + ')'"))
+        XCTAssertFalse(html.contains("bar.style.width"))
+    }
+
+    func testProgressScriptClampsAndCoalesces() {
+        let html = ReaderPage.html(article: article, backgroundColor: nil)
+        XCTAssertTrue(html.contains("Math.min(1, Math.max(0, fraction))"))
+        // One write per frame, and a scroll listener that can't block scrolling.
+        XCTAssertTrue(html.contains("requestAnimationFrame"))
+        XCTAssertTrue(html.contains("{ passive: true }"))
+        // Type metrics change scrollability, so the appearance popover re-measures.
+        XCTAssertTrue(html.contains("window.webwrapOnLayoutChange = measure"))
+        XCTAssertTrue(html.contains("if (window.webwrapOnLayoutChange)"))
+    }
+
+    func testProgressBarSitsBelowThePopovers() {
+        // An open popover must not be crossed by the colored line: controls are z-index 10.
+        let html = ReaderPage.html(article: article, backgroundColor: nil)
+        XCTAssertTrue(html.contains("height: 2.5px; z-index: 9;"))
+        XCTAssertTrue(html.contains("right: 14px; z-index: 10;"))
+    }
+
     func testIsACompleteStandaloneDocument() {
         // Loaded via loadHTMLString as its own document — the doctype keeps WebKit in
         // standards mode (see #76 for why the reader must be a separate document).

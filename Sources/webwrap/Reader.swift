@@ -237,9 +237,11 @@ enum ReaderPage {
           /* Appearance ("Aa") popover and recents list. Chrome UI, so it keeps the sans
              stack and fixed sizes regardless of the reading settings. */
           \(ReaderChrome.indent(ReaderChrome.controlsCSS(), by: 10))
+          \(ReaderChrome.indent(ReaderChrome.progressCSS(), by: 10))
         </style>
         </head>
         <body>
+          \(ReaderChrome.progressBar())
           \(ReaderChrome.indent(ReaderChrome.controls(history: history), by: 2))
           <main>
             <header>
@@ -250,6 +252,7 @@ enum ReaderPage {
           </main>
           <script>
           \(ReaderChrome.indent(ReaderChrome.controlsScript(settings: settings), by: 10))
+          \(ReaderChrome.indent(ReaderChrome.progressScript(), by: 10))
           </script>
         </body>
         </html>

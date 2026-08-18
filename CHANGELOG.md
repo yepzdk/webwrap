@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Reader pages now show a **reading-progress line** along the top edge that fills as you
+  scroll, so a long article's remaining length is visible at a glance. Hidden when the
+  article fits on screen. (#93)
 - The start page of a handler-only app (`create --no-url`) is now a working front door
   instead of a dead end: paste or type a URL to open it, pick from the recent articles you
   read in the reader, and set type and theme before opening anything. (#91)
