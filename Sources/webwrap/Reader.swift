@@ -492,6 +492,10 @@ enum ReaderPage {
             // app's domain scope before navigating — the same path an incoming link takes.
             recents.addEventListener('click', function (e) {
               if (e.target.closest('#readerClear')) {
+                // Removing the button detaches the click target, so the document-level
+                // close handler would see a node outside .reader-controls and hide the
+                // panel — hiding the empty state we're about to show. Stop it here.
+                e.stopPropagation();
                 // Empty the panel in place — the host clears the stored list.
                 recents.querySelectorAll('.recent, #readerClear').forEach(function (n) {
                   n.remove();

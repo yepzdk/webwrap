@@ -66,10 +66,14 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     private var readerAuto = false
     private var isShowingReader = false
     private var suppressReaderOnce = false
-    /// The mirror image of `suppressReaderOnce`: set when a recents row is opened, so the
-    /// resulting load enters the reader once even in apps without auto-reader — the row
-    /// promises the article back in reader view.
-    private var enterReaderOnce = false
+    /// The mirror image of `suppressReaderOnce`: the URL a recents row asked for, so that
+    /// load enters the reader once even in apps without auto-reader — the row promises the
+    /// article back in reader view.
+    ///
+    /// A URL rather than a bool so the request can't leak onto an unrelated page: any
+    /// navigation to something else clears it, which covers the loads that never reach
+    /// `didFinish` (cancelled, policy-cancelled, superseded, or simply hung).
+    private var enterReaderForURL: URL?
     /// Set between `loadHTMLString`-ing the reader document and its `didFinish`, so
     /// that load is marked as the reader (not re-extracted — the reader page itself
     /// is readerable).
@@ -1168,9 +1172,11 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
             return
         }
         // A recents row asked for the reader explicitly; otherwise it's the baked
-        // auto-reader setting that decides.
-        let requested = enterReaderOnce
-        enterReaderOnce = false
+        // auto-reader setting that decides. Any finished load consumes the request —
+        // honored when it's the page that was asked for, dropped otherwise — so it can
+        // never carry over to an unrelated page.
+        let requested = enterReaderForURL != nil && enterReaderForURL == webView.url
+        enterReaderForURL = nil
         guard readerAuto || requested, !isShowingReader, !isShowingFallback,
               let url = webView.url, HostNavigation.isWebURL(url) else { return }
         // Manual, so a page that won't extract beeps rather than failing silently — the
@@ -1197,11 +1203,13 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     /// failures, ignoring cancellations/policy interruptions that aren't real errors.
     private func showFallbackIfNeeded(for error: Error) {
         let code = (error as NSError).code
-        guard !OfflineFallback.isIgnorable(errorCode: code) else { return }
-
         // The load a recents row asked for never arrived; drop the request so a later,
-        // unrelated load doesn't inherit it.
-        enterReaderOnce = false
+        // unrelated load can't inherit it. Cleared BEFORE the ignorable-error guard below,
+        // because cancelled (-999) and policy-cancelled (102) loads are the likeliest way
+        // a row's navigation dies — an off-site redirect or the user clicking elsewhere.
+        enterReaderForURL = nil
+
+        guard !OfflineFallback.isIgnorable(errorCode: code) else { return }
 
         let appName = info("CFBundleName") ?? "WebWrap"
         let nsError = error as NSError
@@ -1270,9 +1278,9 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
                 return
             }
             // The row promises the reader, so re-enter it once this load finishes even in
-            // apps without auto-reader. `didStartProvisionalNavigation` clears
-            // `isShowingReader` for us.
-            enterReaderOnce = true
+            // apps without auto-reader. Keyed to the URL `openIncoming` actually loads
+            // (it cleans first), so only that page honors the request.
+            enterReaderForURL = URLCleaner.clean(url)
         case "webwrapReaderClear":
             guard isShowingReader || pendingReaderRender else { return }
             HostSettings.setReaderHistoryJSON(ReaderHistory().json, store: settingsStore)
