@@ -181,6 +181,28 @@ final class HostSettingsTests: XCTestCase {
         XCTAssertEqual(HostSettings.zoom(store: store), 1.0)
         XCTAssertNil(HostSettings.readerSettingsJSON(store: store))
     }
+
+    func testRestoreDefaultsKeepsReaderHistory() {
+        // History is user-generated data, not a presentation default — an appearance
+        // reset must not silently delete it (cleared from the reader panel instead).
+        let store = MemoryStore()
+        let stored = #"[{"title":"T","url":"https://example.com/"}]"#
+        HostSettings.setReaderHistoryJSON(stored, store: store)
+        HostSettings.restoreDefaults(store: store)
+        XCTAssertEqual(HostSettings.readerHistoryJSON(store: store), stored)
+    }
+
+    // MARK: - Reader history
+
+    func testReaderHistoryJSONRoundTrips() {
+        let store = MemoryStore()
+        XCTAssertNil(HostSettings.readerHistoryJSON(store: store))
+        var history = ReaderHistory()
+        history.record(title: "An article", url: "https://example.com/a")
+        HostSettings.setReaderHistoryJSON(history.json, store: store)
+        XCTAssertEqual(ReaderHistory.fromJSON(HostSettings.readerHistoryJSON(store: store)),
+                       history)
+    }
 }
 
 final class ToolbarStyleTests: XCTestCase {

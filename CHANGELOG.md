@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Added
 - Interactive `update` can now clear a window background color by entering `none` at the
   background-color prompt — parity with `--no-background-color`.
+- Reader view now keeps a **recents list**: a button in the reader chrome opens the last
+  30 articles read in that app, and picking a title reopens it in the reader. Clear the
+  list from the panel; Restore Defaults leaves it alone. (#85)
 
 ## [0.7.0] - 2026-07-17
 

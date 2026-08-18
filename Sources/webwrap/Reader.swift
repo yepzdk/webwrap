@@ -160,8 +160,13 @@ enum ReaderPage {
     /// Appearance is driven by `settings`, baked in as CSS custom properties plus a
     /// `data-theme` attribute; the in-page "Aa" popover adjusts the same properties
     /// live and posts the new settings to the host (`webwrapReader`) for persistence.
+    ///
+    /// `history` is the recents list, baked into a sibling popover; its rows post the
+    /// chosen URL to the host (`webwrapReaderOpen`), which validates and navigates.
+    /// Titles are escaped there too — they come from other sites' pages.
     static func html(article: Article,
                      settings: ReaderSettings = ReaderSettings(),
+                     history: ReaderHistory = ReaderHistory(),
                      backgroundColor: String?) -> String {
         let title = OfflineFallback.escape(article.title)
         // Byline and site name merge into one muted meta line; either may be absent.
@@ -182,6 +187,22 @@ enum ReaderPage {
         let themeAttr = settings.theme == .auto ? "" : " data-theme=\"\(settings.theme.rawValue)\""
         let sans = ReaderSettings.FontFamily.sans.css
         let serif = ReaderSettings.FontFamily.serif.css
+        // Recents rows are built here rather than by the page script so titles and URLs
+        // (other sites' content) run through the same escaping as the article title.
+        // The URL lives in a data attribute; the host re-validates it before navigating.
+        let recentRows = history.entries.map { entry in
+            let host = URL(string: entry.url)?.host ?? ""
+            let hostLine = host.isEmpty ? ""
+                : "<span class=\"recent-host\">\(OfflineFallback.escape(host))</span>"
+            return """
+            <button class="recent" data-url="\(OfflineFallback.escape(entry.url))">\
+            <span class="recent-title">\(OfflineFallback.escape(entry.title))</span>\(hostLine)</button>
+            """
+        }.joined(separator: "\n                ")
+        // The clear action only appears when there's something to clear.
+        let recentsBody = history.entries.isEmpty
+            ? "<p class=\"recent-empty\">No recent articles</p>"
+            : recentRows + "\n                <button id=\"readerClear\">Clear history</button>"
         return """
         <!doctype html>
         <html lang="en"\(themeAttr)>
@@ -272,22 +293,57 @@ enum ReaderPage {
              sizes regardless of the reading settings. */
           .reader-controls {
             position: fixed; top: 14px; right: 14px; z-index: 10;
+            display: flex; gap: 6px;
             font-family: \(sans); font-size: 12px; line-height: 1.3;
           }
-          #readerAa {
+          /* Each button owns the popover anchored under it. */
+          .reader-control { position: relative; }
+          #readerAa, #readerRecentsBtn {
             padding: 4px 10px; font-family: inherit; font-size: 14px;
             color: var(--muted); background: var(--bg);
             border: 1px solid var(--border); border-radius: 6px; cursor: pointer;
           }
-          #readerAa:hover, #readerAa[aria-expanded="true"] { color: var(--fg); }
-          #readerPanel {
+          #readerAa:hover, #readerAa[aria-expanded="true"],
+          #readerRecentsBtn:hover, #readerRecentsBtn[aria-expanded="true"] { color: var(--fg); }
+          /* The icon button matches the "Aa" button's box; the SVG inherits currentColor. */
+          #readerRecentsBtn { display: flex; align-items: center; padding: 5px 9px; }
+          #readerRecentsBtn svg { display: block; }
+          #readerPanel, #readerRecents {
             position: absolute; top: calc(100% + 8px); right: 0; width: 240px;
             padding: 12px; background: var(--bg);
             border: 1px solid var(--border); border-radius: 8px;
             box-shadow: 0 4px 16px rgba(0,0,0,0.12);
             display: flex; flex-direction: column; gap: 10px;
           }
-          #readerPanel[hidden] { display: none; }
+          #readerPanel[hidden], #readerRecents[hidden] { display: none; }
+          /* Recents: a plain list of titles. Padding is on the rows, so the panel itself
+             sheds its gap and lets a long list scroll instead of running off-screen. */
+          /* Right-anchored like the Aa panel: the controls sit at the window's right edge,
+             so the panel has to hang leftward to stay on screen. `max-width` keeps it from
+             running off the LEFT edge on a narrow window. */
+          #readerRecents {
+            width: 280px; max-width: calc(100vw - 28px);
+            padding: 6px; gap: 0; max-height: 60vh; overflow-y: auto;
+          }
+          .recent {
+            display: block; width: 100%; padding: 7px 8px; border: 0; border-radius: 5px;
+            background: transparent; cursor: pointer; text-align: left;
+            font-family: inherit; font-size: 12px; color: var(--fg);
+          }
+          .recent:hover { background: var(--surface); }
+          .recent-title {
+            display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+          }
+          .recent-host { display: block; margin-top: 2px; font-size: 11px; color: var(--muted); }
+          .recent-empty { margin: 0; padding: 7px 8px; color: var(--muted); }
+          /* Clearing history lives next to the history itself — Restore Defaults is for
+             presentation settings and deliberately leaves user data alone. */
+          #readerClear {
+            margin: 4px 6px 2px; padding: 6px 8px; border: 0; border-top: 1px solid var(--border);
+            border-radius: 0; background: transparent; cursor: pointer; text-align: left;
+            font-family: inherit; font-size: 11px; color: var(--muted);
+          }
+          #readerClear:hover { color: var(--fg); }
           .seg { display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
           .seg button {
             flex: 1; padding: 7px 0; border: 0; background: transparent; cursor: pointer;
@@ -310,37 +366,66 @@ enum ReaderPage {
           .swatch-sepia { background: #f4ecd8; }
           .swatch-dark { background: #1c1c1e; }
           .swatch-black { background: #000000; }
+          /* Popover headings — the popovers are opened from unlabelled icon buttons, so
+             each one names itself once opened. */
+          .panel-title {
+            margin: 0; padding: 2px 2px 8px; border-bottom: 1px solid var(--border);
+            font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
+            text-transform: uppercase; color: var(--muted);
+          }
+          /* The recents panel puts padding on its rows, so its heading carries its own. */
+          #readerRecents .panel-title { margin: 2px 6px 4px; padding: 2px 2px 8px; }
         </style>
         </head>
         <body>
           <div class="reader-controls">
-            <button id="readerAa" aria-label="Reader appearance" aria-haspopup="true"
-                    aria-expanded="false" aria-controls="readerPanel">Aa</button>
-            <div id="readerPanel" hidden>
-              <div class="seg" role="group" aria-label="Font size">
-                <button data-step="-1" aria-label="Decrease font size"><span class="a-small">A</span></button>
-                <button data-step="1" aria-label="Increase font size"><span class="a-large">A</span></button>
+            <div class="reader-control">
+              <button id="readerRecentsBtn" aria-label="Recent articles"
+                      title="Recent articles" aria-haspopup="true"
+                      aria-expanded="false" aria-controls="readerRecents">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                  <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>
+                </svg>
+              </button>
+              <div id="readerRecents" hidden aria-labelledby="readerRecentsTitle">
+                <h2 class="panel-title" id="readerRecentsTitle">Recent articles</h2>
+                \(recentsBody)
               </div>
-              <div class="seg" role="group" aria-label="Font style">
-                <button data-key="fontFamily" data-value="serif">Serif</button>
-                <button data-key="fontFamily" data-value="sans">Sans</button>
-              </div>
-              <div class="seg" role="group" aria-label="Column width">
-                <button data-key="width" data-value="narrow">Narrow</button>
-                <button data-key="width" data-value="normal">Normal</button>
-                <button data-key="width" data-value="wide">Wide</button>
-              </div>
-              <div class="seg" role="group" aria-label="Line height">
-                <button data-key="lineHeight" data-value="compact">Compact</button>
-                <button data-key="lineHeight" data-value="normal">Normal</button>
-                <button data-key="lineHeight" data-value="relaxed">Relaxed</button>
-              </div>
-              <div class="themes" role="group" aria-label="Theme">
-                <button class="swatch swatch-auto" data-key="theme" data-value="auto" aria-label="Auto theme" title="Auto"></button>
-                <button class="swatch swatch-light" data-key="theme" data-value="light" aria-label="Light theme" title="Light"></button>
-                <button class="swatch swatch-sepia" data-key="theme" data-value="sepia" aria-label="Sepia theme" title="Sepia"></button>
-                <button class="swatch swatch-dark" data-key="theme" data-value="dark" aria-label="Dark theme" title="Dark"></button>
-                <button class="swatch swatch-black" data-key="theme" data-value="black" aria-label="Black theme" title="Black"></button>
+            </div>
+            <div class="reader-control">
+              <button id="readerAa" aria-label="Reader appearance"
+                      title="Text &amp; appearance" aria-haspopup="true"
+                      aria-expanded="false" aria-controls="readerPanel">Aa</button>
+              <div id="readerPanel" hidden aria-labelledby="readerPanelTitle">
+                <h2 class="panel-title" id="readerPanelTitle">Text &amp; appearance</h2>
+                <div class="seg" role="group" aria-label="Font size">
+                  <button data-step="-1" aria-label="Decrease font size"
+                          title="Smaller text"><span class="a-small">A</span></button>
+                  <button data-step="1" aria-label="Increase font size"
+                          title="Larger text"><span class="a-large">A</span></button>
+                </div>
+                <div class="seg" role="group" aria-label="Font style">
+                  <button data-key="fontFamily" data-value="serif">Serif</button>
+                  <button data-key="fontFamily" data-value="sans">Sans</button>
+                </div>
+                <div class="seg" role="group" aria-label="Column width">
+                  <button data-key="width" data-value="narrow">Narrow</button>
+                  <button data-key="width" data-value="normal">Normal</button>
+                  <button data-key="width" data-value="wide">Wide</button>
+                </div>
+                <div class="seg" role="group" aria-label="Line height">
+                  <button data-key="lineHeight" data-value="compact">Compact</button>
+                  <button data-key="lineHeight" data-value="normal">Normal</button>
+                  <button data-key="lineHeight" data-value="relaxed">Relaxed</button>
+                </div>
+                <div class="themes" role="group" aria-label="Theme">
+                  <button class="swatch swatch-auto" data-key="theme" data-value="auto" aria-label="Auto theme" title="Auto"></button>
+                  <button class="swatch swatch-light" data-key="theme" data-value="light" aria-label="Light theme" title="Light"></button>
+                  <button class="swatch swatch-sepia" data-key="theme" data-value="sepia" aria-label="Sepia theme" title="Sepia"></button>
+                  <button class="swatch swatch-dark" data-key="theme" data-value="dark" aria-label="Dark theme" title="Dark"></button>
+                  <button class="swatch swatch-black" data-key="theme" data-value="black" aria-label="Black theme" title="Black"></button>
+                </div>
               </div>
             </div>
           </div>
@@ -361,6 +446,10 @@ enum ReaderPage {
             var root = document.documentElement;
             var btn = document.getElementById('readerAa');
             var panel = document.getElementById('readerPanel');
+            var recentsBtn = document.getElementById('readerRecentsBtn');
+            var recents = document.getElementById('readerRecents');
+            // The two popovers, so opening one closes the other.
+            var popovers = [{ btn: btn, panel: panel }, { btn: recentsBtn, panel: recents }];
 
             function apply() {
               root.style.setProperty('--reader-size', s.fontSize + 'px');
@@ -378,9 +467,13 @@ enum ReaderPage {
             function save() {
               try { window.webkit.messageHandlers.webwrapReader.postMessage(s); } catch (e) {}
             }
-            function setOpen(open) {
-              panel.hidden = !open;
-              btn.setAttribute('aria-expanded', String(open));
+            // Opens one popover and closes the rest; `null` closes everything.
+            function setOpen(which) {
+              popovers.forEach(function (p) {
+                var open = p.panel === which;
+                p.panel.hidden = !open;
+                p.btn.setAttribute('aria-expanded', String(open));
+              });
             }
             panel.addEventListener('click', function (e) {
               var b = e.target.closest('button');
@@ -392,12 +485,42 @@ enum ReaderPage {
               } else { return; }
               apply(); save();
             });
-            btn.addEventListener('click', function () { setOpen(panel.hidden); });
+            btn.addEventListener('click', function () { setOpen(panel.hidden ? panel : null); });
+            recentsBtn.addEventListener('click', function () {
+              setOpen(recents.hidden ? recents : null);
+            });
+            // A recents row hands its URL to the host, which re-validates it against the
+            // app's domain scope before navigating — the same path an incoming link takes.
+            recents.addEventListener('click', function (e) {
+              if (e.target.closest('#readerClear')) {
+                // Removing the button detaches the click target, so the document-level
+                // close handler would see a node outside .reader-controls and hide the
+                // panel — hiding the empty state we're about to show. Stop it here.
+                e.stopPropagation();
+                // Empty the panel in place — the host clears the stored list.
+                recents.querySelectorAll('.recent, #readerClear').forEach(function (n) {
+                  n.remove();
+                });
+                recents.insertAdjacentHTML('beforeend',
+                  '<p class="recent-empty">No recent articles</p>');
+                try { window.webkit.messageHandlers.webwrapReaderClear.postMessage(''); }
+                catch (err) {}
+                return;
+              }
+              var row = e.target.closest('button[data-url]');
+              if (!row) { return; }
+              setOpen(null);
+              try { window.webkit.messageHandlers.webwrapReaderOpen.postMessage(row.dataset.url); }
+              catch (err) {}
+            });
             document.addEventListener('click', function (e) {
-              if (!panel.hidden && !e.target.closest('.reader-controls')) { setOpen(false); }
+              if (!e.target.closest('.reader-controls')) { setOpen(null); }
             });
             document.addEventListener('keydown', function (e) {
-              if (e.key === 'Escape' && !panel.hidden) { setOpen(false); btn.focus(); }
+              if (e.key !== 'Escape') { return; }
+              // Return focus to the button that opened the popover being dismissed.
+              var open = popovers.filter(function (p) { return !p.panel.hidden; })[0];
+              if (open) { setOpen(null); open.btn.focus(); }
             });
             apply();
           })();

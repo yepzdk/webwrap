@@ -66,6 +66,14 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     private var readerAuto = false
     private var isShowingReader = false
     private var suppressReaderOnce = false
+    /// The mirror image of `suppressReaderOnce`: the URL a recents row asked for, so that
+    /// load enters the reader once even in apps without auto-reader — the row promises the
+    /// article back in reader view.
+    ///
+    /// A URL rather than a bool so the request can't leak onto an unrelated page: any
+    /// navigation to something else clears it, which covers the loads that never reach
+    /// `didFinish` (cancelled, policy-cancelled, superseded, or simply hung).
+    private var enterReaderForURL: URL?
     /// Set between `loadHTMLString`-ing the reader document and its `didFinish`, so
     /// that load is marked as the reader (not re-extracted — the reader page itself
     /// is readerable).
@@ -189,6 +197,10 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         config.userContentController.add(self, name: "webwrapRetry")
         // The reader page's "Aa" popover posts appearance settings here to persist them.
         config.userContentController.add(self, name: "webwrapReader")
+        // The reader page's recents popover posts a chosen article URL here to navigate,
+        // and posts here to empty the list.
+        config.userContentController.add(self, name: "webwrapReaderOpen")
+        config.userContentController.add(self, name: "webwrapReaderClear")
 
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: width, height: height),
@@ -563,10 +575,23 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
             }
             let settings = ReaderSettings.fromJSON(
                 HostSettings.readerSettingsJSON(store: self.settingsStore))
+            self.readerSourceURL = self.webView.url
+            // Record before rendering so the article being opened is the panel's top row
+            // — both entry paths (⇧⌘R and auto-reader) come through here.
+            var history = ReaderHistory.fromJSON(
+                HostSettings.readerHistoryJSON(store: self.settingsStore))
+            if let source = self.readerSourceURL {
+                // Record the cleaned URL: opening a row routes through `openIncoming`,
+                // which cleans it, so recording the raw one would make the replay look
+                // like a different article and add a second row for it.
+                history.record(title: article.title,
+                               url: URLCleaner.clean(source).absoluteString)
+                HostSettings.setReaderHistoryJSON(history.json, store: self.settingsStore)
+            }
             let html = ReaderPage.html(article: article,
                                        settings: settings,
+                                       history: history,
                                        backgroundColor: self.backgroundColorRaw)
-            self.readerSourceURL = self.webView.url
             self.pendingReaderRender = true
             self.webView.loadHTMLString(html, baseURL: self.readerSourceURL)
         }
@@ -1146,9 +1171,17 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
             suppressReaderOnce = false
             return
         }
-        guard readerAuto, !isShowingReader, !isShowingFallback,
+        // A recents row asked for the reader explicitly; otherwise it's the baked
+        // auto-reader setting that decides. Any finished load consumes the request —
+        // honored when it's the page that was asked for, dropped otherwise — so it can
+        // never carry over to an unrelated page.
+        let requested = enterReaderForURL != nil && enterReaderForURL == webView.url
+        enterReaderForURL = nil
+        guard readerAuto || requested, !isShowingReader, !isShowingFallback,
               let url = webView.url, HostNavigation.isWebURL(url) else { return }
-        enterReader(manual: false)
+        // Manual, so a page that won't extract beeps rather than failing silently — the
+        // user asked for this one by clicking it.
+        enterReader(manual: requested)
     }
 
     // MARK: - Load failures (offline fallback)
@@ -1170,6 +1203,12 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     /// failures, ignoring cancellations/policy interruptions that aren't real errors.
     private func showFallbackIfNeeded(for error: Error) {
         let code = (error as NSError).code
+        // The load a recents row asked for never arrived; drop the request so a later,
+        // unrelated load can't inherit it. Cleared BEFORE the ignorable-error guard below,
+        // because cancelled (-999) and policy-cancelled (102) loads are the likeliest way
+        // a row's navigation dies — an off-site redirect or the user clicking elsewhere.
+        enterReaderForURL = nil
+
         guard !OfflineFallback.isIgnorable(errorCode: code) else { return }
 
         let appName = info("CFBundleName") ?? "WebWrap"
@@ -1204,7 +1243,7 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     }
 
     // Our injected pages post here: the fallback page's Retry button and the reader
-    // page's "Aa" appearance popover. The handlers are controller-wide, so the live
+    // page's "Aa" appearance and recents popovers. The handlers are controller-wide, so the live
     // site's JS could also post to them — each message is only honored while its page
     // is actually showing, tracked explicitly rather than inferred from webView.url,
     // whose value after loadHTMLString isn't something we want to depend on.
@@ -1225,6 +1264,26 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
             guard isShowingReader || pendingReaderRender else { return }
             let settings = ReaderSettings.decode(message.body)
             HostSettings.setReaderSettingsJSON(settings.json, store: settingsStore)
+        case "webwrapReaderOpen":
+            guard isShowingReader || pendingReaderRender,
+                  let raw = message.body as? String, let url = URL(string: raw) else { return }
+            // Routed like any incoming link: domain scoping still applies, so a stale
+            // entry from before an `update --url` can't navigate off-site. A rejected
+            // URL must leave the reader state alone — the reader is still on screen, and
+            // clearing it would strand the page (appearance changes dropped, ⇧⌘R
+            // re-extracting the reader document into itself). Beep like the other
+            // explicit open paths so a dead row isn't a silent no-op.
+            guard openIncoming(url) else {
+                NSSound.beep()
+                return
+            }
+            // The row promises the reader, so re-enter it once this load finishes even in
+            // apps without auto-reader. Keyed to the URL `openIncoming` actually loads
+            // (it cleans first), so only that page honors the request.
+            enterReaderForURL = URLCleaner.clean(url)
+        case "webwrapReaderClear":
+            guard isShowingReader || pendingReaderRender else { return }
+            HostSettings.setReaderHistoryJSON(ReaderHistory().json, store: settingsStore)
         default:
             break
         }

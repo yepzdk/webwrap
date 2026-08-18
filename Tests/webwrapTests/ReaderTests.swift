@@ -163,6 +163,21 @@ final class ReaderPageTests: XCTestCase {
         XCTAssertTrue(html.contains("data-theme=\"black\""))
     }
 
+    func testPopoverButtonsAndPanelsAreLabelled() {
+        // The chrome buttons are unlabelled visually, so each needs a hover tooltip and
+        // each panel must name itself once opened.
+        let html = ReaderPage.html(article: article, backgroundColor: nil)
+        XCTAssertTrue(html.contains("title=\"Recent articles\""))
+        XCTAssertTrue(html.contains("title=\"Text &amp; appearance\""))
+        XCTAssertTrue(html.contains(">Recent articles</h2>"))
+        XCTAssertTrue(html.contains(">Text &amp; appearance</h2>"))
+        XCTAssertTrue(html.contains("aria-labelledby=\"readerRecentsTitle\""))
+        XCTAssertTrue(html.contains("aria-labelledby=\"readerPanelTitle\""))
+        // The A/A size row doesn't self-explain either.
+        XCTAssertTrue(html.contains("title=\"Smaller text\""))
+        XCTAssertTrue(html.contains("title=\"Larger text\""))
+    }
+
     func testContainsAppearancePopoverAndBridge() {
         let html = ReaderPage.html(article: article, backgroundColor: nil)
         XCTAssertTrue(html.contains("id=\"readerAa\""))
@@ -172,6 +187,62 @@ final class ReaderPageTests: XCTestCase {
                       "compact", "relaxed", "auto", "light", "sepia", "dark", "black"] {
             XCTAssertTrue(html.contains("data-value=\"\(value)\""), value)
         }
+    }
+
+    func testRecentsPanelListsTitlesAndEscapesThem() {
+        var history = ReaderHistory()
+        history.record(title: "Older piece", url: "https://news.example.com/older")
+        history.record(title: "Tips & <script>", url: "https://blog.example.com/tips?a=1")
+        let html = ReaderPage.html(article: article, history: history, backgroundColor: nil)
+        XCTAssertTrue(html.contains("id=\"readerRecentsBtn\""))
+        XCTAssertTrue(html.contains("messageHandlers.webwrapReaderOpen.postMessage"))
+        // Newest first, titles escaped — they come from other sites' pages.
+        XCTAssertTrue(html.contains("Tips &amp; &lt;script&gt;"))
+        XCTAssertFalse(html.contains("<script>Tips"))
+        XCTAssertTrue(html.contains("data-url=\"https://blog.example.com/tips?a=1\""))
+        // The host is shown as a second line on each row.
+        XCTAssertTrue(html.contains("blog.example.com"))
+        XCTAssertTrue(html.contains("news.example.com"))
+        let newest = try? XCTUnwrap(html.range(of: "Tips &amp; &lt;script&gt;"))
+        let oldest = try? XCTUnwrap(html.range(of: "Older piece"))
+        XCTAssertTrue(newest!.lowerBound < oldest!.lowerBound)
+    }
+
+    func testRecentsPanelEmptyState() {
+        let html = ReaderPage.html(article: article, backgroundColor: nil)
+        XCTAssertTrue(html.contains("No recent articles"))
+        XCTAssertFalse(html.contains("data-url="))
+        // Nothing to clear, so no clear action.
+        XCTAssertFalse(html.contains("id=\"readerClear\""))
+    }
+
+    func testBothPopoversAreRightAnchored() {
+        // The controls sit at the window's right edge, so a panel must hang leftward or
+        // it runs off screen. Regression guard: left-anchoring the recents panel pushed
+        // most of it out of the viewport.
+        let html = ReaderPage.html(article: article, backgroundColor: nil)
+        XCTAssertTrue(html.contains("#readerPanel, #readerRecents {"))
+        XCTAssertTrue(html.contains("position: absolute; top: calc(100% + 8px); right: 0;"))
+        XCTAssertFalse(html.contains("left: 0; right: auto;"))
+        // …and it's kept from overflowing the opposite edge on a narrow window.
+        XCTAssertTrue(html.contains("max-width: calc(100vw - 28px)"))
+    }
+
+    func testRecentsPanelOffersClearWhenNonEmpty() {
+        var history = ReaderHistory()
+        history.record(title: "Something", url: "https://example.com/s")
+        let html = ReaderPage.html(article: article, history: history, backgroundColor: nil)
+        XCTAssertTrue(html.contains("id=\"readerClear\""))
+        XCTAssertTrue(html.contains("messageHandlers.webwrapReaderClear.postMessage"))
+    }
+
+    func testRecentsRowTitleCannotBreakOutOfItsAttribute() {
+        // A crafted URL must not escape the data-url attribute into new markup.
+        var history = ReaderHistory()
+        history.record(title: "Evil", url: "https://example.com/\" onclick=\"alert(1)")
+        let html = ReaderPage.html(article: article, history: history, backgroundColor: nil)
+        XCTAssertFalse(html.contains("onclick=\"alert(1)\""))
+        XCTAssertTrue(html.contains("&quot; onclick=&quot;"))
     }
 
     func testIsACompleteStandaloneDocument() {
