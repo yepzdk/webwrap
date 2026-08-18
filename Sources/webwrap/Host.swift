@@ -50,6 +50,11 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     /// home. Set when the fallback is shown, cleared when any real load starts; only
     /// consulted while `isShowingFallback`.
     private var failedURL: URL?
+    /// Whether the built-in start page (handler-only apps, no home URL) is on screen. Like
+    /// `isShowingFallback`, it gates that page's message handlers so only our own page —
+    /// not a live site — can post to them, and it can't be inferred from `webView.url`
+    /// after `loadHTMLString`.
+    private var isShowingStartPage = false
 
     /// Whether the app accepts off-domain incoming URLs (from `--open-any-url`). When
     /// false, only same-site URLs are loaded; off-domain ones are ignored.
@@ -201,6 +206,8 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         // and posts here to empty the list.
         config.userContentController.add(self, name: "webwrapReaderOpen")
         config.userContentController.add(self, name: "webwrapReaderClear")
+        // The start page's URL field posts here to open a typed or pasted address.
+        config.userContentController.add(self, name: "webwrapOpenURL")
 
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: width, height: height),
@@ -255,6 +262,7 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         if let pending = pendingIncomingURL, acceptableIncoming(pending) {
             pendingIncomingURL = nil
             isShowingFallback = false
+            isShowingStartPage = false
             webView.load(URLRequest(url: pending))
         } else {
             loadIntendedURL()
@@ -1077,6 +1085,7 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
             pendingIncomingURL = url
         } else {
             isShowingFallback = false
+            isShowingStartPage = false
             failedURL = nil
             webView.load(URLRequest(url: url))
             NSApp.activate(ignoringOtherApps: true)
@@ -1203,6 +1212,8 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     /// failures, ignoring cancellations/policy interruptions that aren't real errors.
     private func showFallbackIfNeeded(for error: Error) {
         let code = (error as NSError).code
+        // The fallback replaces whatever was on screen, including the start page.
+        isShowingStartPage = false
         // The load a recents row asked for never arrived; drop the request so a later,
         // unrelated load can't inherit it. Cleared BEFORE the ignorable-error guard below,
         // because cancelled (-999) and policy-cancelled (102) loads are the likeliest way
@@ -1233,10 +1244,21 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         isShowingFallback = false
         failedURL = nil
         if let url = intendedURL {
+            isShowingStartPage = false
             webView.load(URLRequest(url: url))
         } else {
             let appName = info("CFBundleName") ?? "WebWrap"
+            // The start page is the whole front door for a handler-only app, so it carries
+            // the recents list and appearance controls — same chrome as the reader, reading
+            // the same persisted settings.
+            let settings = ReaderSettings.fromJSON(
+                HostSettings.readerSettingsJSON(store: settingsStore))
+            let history = ReaderHistory.fromJSON(
+                HostSettings.readerHistoryJSON(store: settingsStore))
+            isShowingStartPage = true
             webView.loadHTMLString(StartPage.html(appName: appName,
+                                                  settings: settings,
+                                                  history: history,
                                                   backgroundColor: backgroundColorRaw),
                                    baseURL: nil)
         }
@@ -1261,11 +1283,12 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         case "webwrapReader":
             // pendingReaderRender covers the window between loadHTMLString and its
             // didFinish, where the reader is on screen but not yet marked as showing.
-            guard isShowingReader || pendingReaderRender else { return }
+            // The start page carries the same appearance popover, writing the same settings.
+            guard isShowingReader || pendingReaderRender || isShowingStartPage else { return }
             let settings = ReaderSettings.decode(message.body)
             HostSettings.setReaderSettingsJSON(settings.json, store: settingsStore)
         case "webwrapReaderOpen":
-            guard isShowingReader || pendingReaderRender,
+            guard isShowingReader || pendingReaderRender || isShowingStartPage,
                   let raw = message.body as? String, let url = URL(string: raw) else { return }
             // Routed like any incoming link: domain scoping still applies, so a stale
             // entry from before an `update --url` can't navigate off-site. A rejected
@@ -1282,8 +1305,21 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
             // (it cleans first), so only that page honors the request.
             enterReaderForURL = URLCleaner.clean(url)
         case "webwrapReaderClear":
-            guard isShowingReader || pendingReaderRender else { return }
+            guard isShowingReader || pendingReaderRender || isShowingStartPage else { return }
             HostSettings.setReaderHistoryJSON(ReaderHistory().json, store: settingsStore)
+        case "webwrapOpenURL":
+            // The start page's URL field. Normalized through the same helper ⇧⌘O uses, so
+            // bare "example.com/x" works and typing, pasting, and Choosy all validate
+            // identically — then routed through openIncoming, which cleans the URL and
+            // applies the app's domain scope.
+            guard isShowingStartPage, let raw = message.body as? String else { return }
+            guard let url = HostNavigation.clipboardURL(from: raw), openIncoming(url) else {
+                // The user is looking straight at the field they typed into, so a beep alone
+                // would be invisible feedback; the page shows an inline message.
+                NSSound.beep()
+                webView.evaluateJavaScript("window.webwrapURLRejected && window.webwrapURLRejected()")
+                return
+            }
         default:
             break
         }
@@ -1657,7 +1693,14 @@ enum OfflineFallback {
 /// unit-testable. Shares `OfflineFallback`'s visual language and background rule:
 /// a parseable manifest color tints the page, otherwise it follows light/dark.
 enum StartPage {
-    static func html(appName: String, backgroundColor: String?) -> String {
+    /// The built-in page a handler-only app opens to. It's the app's entire front door, so
+    /// besides naming the app it offers everything needed to start reading: a URL field
+    /// (with the ⇧⌘O shortcut as a hint), the recents list, and the appearance controls —
+    /// the same chrome as the reader page, reading the same persisted settings (#91).
+    static func html(appName: String,
+                     settings: ReaderSettings = ReaderSettings(),
+                     history: ReaderHistory = ReaderHistory(),
+                     backgroundColor: String?) -> String {
         let name = OfflineFallback.escape(appName)
         let bgRule: String
         if let backgroundColor, CSSColor.parse(backgroundColor) != nil {
@@ -1665,52 +1708,139 @@ enum StartPage {
         } else {
             bgRule = "background: var(--bg);"
         }
+        let sans = ReaderSettings.FontFamily.sans.css
+        // Recents are listed inline here rather than tucked in the popover: this page has
+        // the whole window and nothing competing for it, and picking up where you left off
+        // is the most likely reason you're looking at it.
+        let recentsList = history.entries.isEmpty
+            ? """
+            <p class="hint empty">No articles yet. Route links here from your browser picker
+                  (e.g. Choosy), or open one from the command line with <code>open</code>.</p>
+            """
+            : """
+            <h2 class="section">Recent articles</h2>
+                  <div class="recents-inline">
+                    \(ReaderChrome.indent(ReaderChrome.recentsRows(history), by: 8))
+                  </div>
+            """
         return """
         <!doctype html>
-        <html lang="en">
+        <html lang="en"\(ReaderChrome.themeAttribute(settings))>
         <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="color-scheme" content="light dark">
         <title>\(name)</title>
         <style>
-          :root {
-            --bg: #fafafa; --fg: #1c1c1e; --muted: #6b6b70;
-          }
-          @media (prefers-color-scheme: dark) {
-            :root {
-              --bg: #1c1c1e; --fg: #f2f2f7; --muted: #9a9aa0;
-            }
-          }
+          \(ReaderChrome.indent(ReaderChrome.themeCSS(settings), by: 10))
           * { box-sizing: border-box; }
           html, body { height: 100%; margin: 0; }
           body {
             \(bgRule)
             color: var(--fg);
-            font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
-            display: flex; align-items: center; justify-content: center;
+            font: 15px/1.5 \(sans);
             -webkit-font-smoothing: antialiased;
           }
-          .card { text-align: center; padding: 24px; max-width: 30rem; }
-          .icon { color: var(--muted); margin-bottom: 16px; }
-          .icon svg { width: 44px; height: 44px; }
-          h1 { font-size: 20px; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 8px; }
-          p { color: var(--muted); margin: 0 auto; max-width: 26rem; }
+          /* An explicit theme wins over any baked background color. */
+          :root[data-theme] body { background: var(--bg); }
+          main {
+            max-width: 34rem; margin: 0 auto;
+            padding: 18vh 24px 64px;
+          }
+          h1 {
+            font-size: 22px; font-weight: 600; letter-spacing: -0.01em;
+            margin: 0 0 20px; text-align: center;
+          }
+          /* URL entry — the primary action, so it leads. */
+          form { display: flex; gap: 8px; margin: 0 0 8px; }
+          #url {
+            flex: 1; min-width: 0; padding: 9px 11px;
+            font-family: inherit; font-size: 14px;
+            color: var(--fg); background: var(--bg);
+            border: 1px solid var(--border); border-radius: 6px;
+          }
+          #url:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+          #url::placeholder { color: var(--muted); }
+          button[type="submit"] {
+            padding: 9px 16px; font-family: inherit; font-size: 14px;
+            color: #fff; background: var(--accent);
+            border: 1px solid var(--accent); border-radius: 6px; cursor: pointer;
+          }
+          button[type="submit"]:hover { filter: brightness(1.08); }
+          .hint { color: var(--muted); font-size: 12px; margin: 0; text-align: center; }
+          .hint code {
+            font-family: ui-monospace, Menlo, monospace; font-size: 11px;
+            padding: 1px 4px; background: var(--surface); border-radius: 3px;
+          }
+          kbd {
+            font-family: inherit; font-size: 11px; padding: 1px 5px;
+            border: 1px solid var(--border); border-radius: 4px; background: var(--surface);
+          }
+          /* Shown by the host when a typed URL is rejected. */
+          #error {
+            margin: 8px 0 0; text-align: center; font-size: 12px; color: var(--accent);
+          }
+          #error[hidden] { display: none; }
+          .section {
+            font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
+            text-transform: uppercase; color: var(--muted);
+            margin: 36px 0 8px; padding-bottom: 8px;
+            border-bottom: 1px solid var(--border);
+          }
+          .recents-inline { display: flex; flex-direction: column; }
+          .empty { margin-top: 36px; }
+          \(ReaderChrome.indent(ReaderChrome.controlsCSS(), by: 10))
         </style>
         </head>
         <body>
-          <div class="card">
-            <div class="icon" aria-hidden="true">
-              <!-- link, Lucide-style line icon, inherits currentColor -->
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
-                   stroke-linecap="round" stroke-linejoin="round">
-                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
-                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
-              </svg>
-            </div>
+          \(ReaderChrome.indent(ReaderChrome.controls(history: history), by: 2))
+          <main>
             <h1>\(name)</h1>
-            <p>No page open. Route links here from your browser picker (e.g. Choosy),
-            or open one from the command line with <code>open</code>.</p>
-          </div>
+            <form id="open">
+              <input id="url" type="text" inputmode="url" autocomplete="off"
+                     autocapitalize="off" spellcheck="false" autofocus
+                     aria-label="Address to open" placeholder="Paste or type a URL">
+              <button type="submit">Open</button>
+            </form>
+            <p class="hint">or press <kbd>⇧⌘O</kbd> to open a copied link</p>
+            <p id="error" hidden role="alert">That doesn't look like a link this app can open.</p>
+            \(recentsList)
+          </main>
+          <script>
+          \(ReaderChrome.indent(ReaderChrome.controlsScript(settings: settings), by: 10))
+          (function () {
+            var form = document.getElementById('open');
+            var field = document.getElementById('url');
+            var error = document.getElementById('error');
+            form.addEventListener('submit', function (e) {
+              e.preventDefault();
+              var value = field.value.trim();
+              if (!value) { field.focus(); return; }
+              error.hidden = true;
+              try { window.webkit.messageHandlers.webwrapOpenURL.postMessage(value); }
+              catch (err) {}
+            });
+            // Typing again clears a previous rejection.
+            field.addEventListener('input', function () { error.hidden = true; });
+            // Called by the host when it refuses the address.
+            window.webwrapURLRejected = function () {
+              error.hidden = false;
+              field.focus();
+              field.select();
+            };
+            // The inline recents list shares the popover's row markup, so it needs the same
+            // click handling — the popover's own listener is scoped to the popover.
+            var inline = document.querySelector('.recents-inline');
+            if (inline) {
+              inline.addEventListener('click', function (e) {
+                var row = e.target.closest('button[data-url]');
+                if (!row) { return; }
+                try { window.webkit.messageHandlers.webwrapReaderOpen.postMessage(row.dataset.url); }
+                catch (err) {}
+              });
+            }
+          })();
+          </script>
         </body>
         </html>
         """
