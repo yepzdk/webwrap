@@ -216,6 +216,18 @@ final class ReaderPageTests: XCTestCase {
         XCTAssertFalse(html.contains("id=\"readerClear\""))
     }
 
+    func testBothPopoversAreRightAnchored() {
+        // The controls sit at the window's right edge, so a panel must hang leftward or
+        // it runs off screen. Regression guard: left-anchoring the recents panel pushed
+        // most of it out of the viewport.
+        let html = ReaderPage.html(article: article, backgroundColor: nil)
+        XCTAssertTrue(html.contains("#readerPanel, #readerRecents {"))
+        XCTAssertTrue(html.contains("position: absolute; top: calc(100% + 8px); right: 0;"))
+        XCTAssertFalse(html.contains("left: 0; right: auto;"))
+        // …and it's kept from overflowing the opposite edge on a narrow window.
+        XCTAssertTrue(html.contains("max-width: calc(100vw - 28px)"))
+    }
+
     func testRecentsPanelOffersClearWhenNonEmpty() {
         var history = ReaderHistory()
         history.record(title: "Something", url: "https://example.com/s")

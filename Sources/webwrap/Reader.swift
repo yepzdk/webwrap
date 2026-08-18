@@ -318,10 +318,11 @@ enum ReaderPage {
           #readerPanel[hidden], #readerRecents[hidden] { display: none; }
           /* Recents: a plain list of titles. Padding is on the rows, so the panel itself
              sheds its gap and lets a long list scroll instead of running off-screen. */
-          /* Anchored from its button's LEFT edge (unlike the Aa panel): it's the leftmost
-             control, so hanging 280px to the left would run off a narrow window. */
+          /* Right-anchored like the Aa panel: the controls sit at the window's right edge,
+             so the panel has to hang leftward to stay on screen. `max-width` keeps it from
+             running off the LEFT edge on a narrow window. */
           #readerRecents {
-            left: 0; right: auto; width: 280px; max-width: calc(100vw - 28px);
+            width: 280px; max-width: calc(100vw - 28px);
             padding: 6px; gap: 0; max-height: 60vh; overflow-y: auto;
           }
           .recent {
