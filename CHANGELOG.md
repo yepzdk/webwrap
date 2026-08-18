@@ -7,13 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-08-18
+
 ### Added
-- Reader pages now show a **reading-progress line** along the top edge that fills as you
-  scroll, so a long article's remaining length is visible at a glance. Hidden when the
-  article fits on screen. (#93)
+- Reader view now keeps a **recents list**: a button in the reader chrome opens the last
+  30 articles read in that app, and picking a title reopens it in the reader. Clear the
+  list from the panel; Restore Defaults leaves it alone. (#85)
 - The start page of a handler-only app (`create --no-url`) is now a working front door
   instead of a dead end: paste or type a URL to open it, pick from the recent articles you
   read in the reader, and set type and theme before opening anything. (#91)
+- Reader pages now show a **reading-progress line** along the top edge that fills as you
+  scroll, so a long article's remaining length is visible at a glance. Hidden when the
+  article fits on screen. (#93)
+- Interactive `update` can now clear a window background color by entering `none` at the
+  background-color prompt — parity with `--no-background-color`. (#53)
 
 ### Changed
 - Generated apps now get their own executable name, `webwrap-<app-name>`, instead of every
@@ -21,13 +28,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   quit on its own (`pkill -x webwrap-dr-lyd`) without taking down every other webwrap app,
   while `pgrep webwrap` still matches them as a group. Existing apps pick up the new name
   the next time they're updated. (#87)
-
-### Added
-- Interactive `update` can now clear a window background color by entering `none` at the
-  background-color prompt — parity with `--no-background-color`.
-- Reader view now keeps a **recents list**: a button in the reader chrome opens the last
-  30 articles read in that app, and picking a title reopens it in the reader. Clear the
-  list from the panel; Restore Defaults leaves it alone. (#85)
 
 ## [0.7.0] - 2026-07-17
 
