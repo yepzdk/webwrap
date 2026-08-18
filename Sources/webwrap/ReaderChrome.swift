@@ -170,6 +170,82 @@ enum ReaderChrome {
         """
     }
 
+    /// The reading-progress line: a hairline along the top edge that fills as the article
+    /// scrolls, so a chromeless reader still answers "how much is left?" (#93).
+    ///
+    /// 2.5px to match `HostDelegate.progressBarHeight` — the native page-load line uses the
+    /// same idiom, and the two can't share a constant across the Swift/CSS boundary, so
+    /// they're kept in step by hand. `z-index` sits below `.reader-controls` (10) so an open
+    /// popover is never crossed by a colored line.
+    static func progressCSS() -> String {
+        """
+        #readerProgress {
+          position: fixed; top: 0; left: 0; width: 100%; height: 2.5px; z-index: 9;
+          background: var(--accent);
+          /* scaleX from the left rather than animating width: composites on the GPU, so a
+             fast scroll doesn't force layout on every frame. */
+          transform-origin: left center; transform: scaleX(0);
+        }
+        #readerProgress[hidden] { display: none; }
+        """
+    }
+
+    /// The progress line's element. Starts hidden — the script shows it only once it knows
+    /// the article actually scrolls, so a short piece never displays a permanently full bar.
+    /// `aria-hidden` because a scroll fraction is decorative; the article text is the content.
+    static func progressBar() -> String {
+        "<div id=\"readerProgress\" hidden aria-hidden=\"true\"></div>"
+    }
+
+    /// Drives the reading-progress line from scroll position. A separate fragment from
+    /// `controlsScript` because only the reader page installs it — it registers
+    /// `window.webwrapOnLayoutChange`, which the appearance popover calls after changing type
+    /// metrics (font size, column width and leading all change how far there is to scroll).
+    ///
+    /// Emitted after `controlsScript` so that hook is in place before the first `apply()`.
+    static func progressScript() -> String {
+        """
+        (function () {
+          var bar = document.getElementById('readerProgress');
+          var root = document.documentElement;
+          var ticking = false;
+
+          function measure() {
+            var max = root.scrollHeight - root.clientHeight;
+            // Nothing to scroll (a short article, or a window taller than the text): hide
+            // rather than show a full bar, which would read as "you're at the end".
+            if (max <= 0) {
+              bar.hidden = true;
+              return;
+            }
+            bar.hidden = false;
+            var fraction = root.scrollTop / max;
+            fraction = Math.min(1, Math.max(0, fraction));
+            bar.style.transform = 'scaleX(' + fraction + ')';
+          }
+          // Coalesce to one write per frame: a trackpad flick fires scroll far faster than
+          // the display refreshes.
+          function schedule() {
+            if (ticking) { return; }
+            ticking = true;
+            window.requestAnimationFrame(function () {
+              ticking = false;
+              measure();
+            });
+          }
+
+          // Passive: this never calls preventDefault, so it must not block scrolling.
+          window.addEventListener('scroll', schedule, { passive: true });
+          window.addEventListener('resize', schedule);
+          // Measure directly rather than via schedule(): requestAnimationFrame doesn't fire
+          // while a window is occluded or offscreen, and the bar's initial state (crucially,
+          // whether it's hidden at all) must not wait for a frame that may never come.
+          window.webwrapOnLayoutChange = measure;
+          measure();
+        })();
+        """
+    }
+
     /// One recents row per entry, newest first — built here rather than by the page script
     /// so titles and URLs (other sites' content) run through the same escaping as the rest
     /// of the page. The URL lives in a data attribute; the host re-validates it before
@@ -287,6 +363,10 @@ enum ReaderChrome {
             });
             panel.querySelector('button[data-step="-1"]').disabled = s.fontSize <= MIN;
             panel.querySelector('button[data-step="1"]').disabled = s.fontSize >= MAX;
+            // Type metrics change how much there is to scroll, so anything tracking scroll
+            // position has to re-measure. Only the reader page installs this (see
+            // progressScript); the start page leaves it undefined.
+            if (window.webwrapOnLayoutChange) { window.webwrapOnLayoutChange(); }
           }
           function save() {
             try { window.webkit.messageHandlers.webwrapReader.postMessage(s); } catch (e) {}

@@ -123,4 +123,16 @@ final class StartPageTests: XCTestCase {
         XCTAssertTrue(html.hasPrefix("<!doctype html>"))
         XCTAssertTrue(html.hasSuffix("</html>"))
     }
+
+    func testHasNoReadingProgressBar() {
+        // Reading progress belongs to a long article (#93); this page has no such content,
+        // and the shared appearance script must not assume the hook exists here.
+        var history = ReaderHistory()
+        history.record(title: "Something", url: "https://x.test/s")
+        let html = StartPage.html(appName: "Reader", history: history, backgroundColor: nil)
+        XCTAssertFalse(html.contains("id=\"readerProgress\""))
+        XCTAssertFalse(html.contains("window.webwrapOnLayoutChange = measure"))
+        // The guarded call is still present (it's in the shared script) but must be a no-op.
+        XCTAssertTrue(html.contains("if (window.webwrapOnLayoutChange)"))
+    }
 }
