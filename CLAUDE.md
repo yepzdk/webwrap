@@ -11,7 +11,7 @@ Guidance for Claude Code when working in this repository.
 A **single binary** runs in two modes — this is the central design decision, do not split it into two executables:
 
 - **CLI mode**: `webwrap create ...` scaffolds an `.app`. Entry: `main.swift` → `WebWrap.main()` → `Create.run()` → `AppBuilder.build()`.
-- **Host mode**: the same binary is copied into the generated bundle's `Contents/MacOS/`. The bundle's `Info.plist` sets `WEBWRAP_HOST=1` via `LSEnvironment`. On launch, `main.swift` detects that variable and calls `runHost()` instead of parsing arguments.
+- **Host mode**: the same binary is copied into the generated bundle's `Contents/MacOS/`, named `webwrap-<app-slug>` (`AppBuilder.executableName(for:)`) so each app has its own process name — one app can be killed without matching the others. The bundle's `Info.plist` sets `WEBWRAP_HOST=1` via `LSEnvironment`. On launch, `main.swift` detects that variable and calls `runHost()` instead of parsing arguments.
 
 The target URL and window size are passed from CLI to host via custom `Info.plist` keys (`WebWrapURL`, `WebWrapWidth`, `WebWrapHeight`, and `WebWrapCreatorVersion` for the About panel) baked in at create time.
 

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- Generated apps now get their own executable name, `webwrap-<app-name>`, instead of every
+  app sharing `webwrap-host`. Each app is identifiable in Activity Monitor and can be
+  quit on its own (`pkill -x webwrap-dr-lyd`) without taking down every other webwrap app,
+  while `pgrep webwrap` still matches them as a group. Existing apps pick up the new name
+  the next time they're updated. (#87)
+
 ### Added
 - Interactive `update` can now clear a window background color by entering `none` at the
   background-color prompt — parity with `--no-background-color`.

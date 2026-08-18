@@ -78,7 +78,7 @@ struct AppBuilder {
         // Copy our own binary in as the app's executable. The same binary
         // detects WEBWRAP_HOST=1 (set via LSEnvironment below) and runs in host mode.
         let selfPath = try ownExecutablePath()
-        let execName = "webwrap-host"
+        let execName = Self.executableName(for: name)
         let destExec = (macOS as NSString).appendingPathComponent(execName)
         try fm.copyItem(atPath: selfPath, toPath: destExec)
         try makeExecutable(destExec)
@@ -122,6 +122,50 @@ struct AppBuilder {
             .filter { !$0.isEmpty }
             .joined(separator: "-")
         return slug.isEmpty ? "app" : slug
+    }
+
+    /// The longest slug allowed in an executable name. Generous for real app names, and
+    /// far enough under the 255-byte filesystem limit that the prefix can't push it over.
+    static let executableSlugLimit = 60
+
+    /// Letters that must be spelled out rather than folded, because they carry no
+    /// decomposable diacritic — Unicode folding would drop them, silently mangling
+    /// Nordic and German app names. Ordered longest-first is unnecessary (no overlaps).
+    static let asciiSpellings: [(String, String)] = [
+        ("æ", "ae"), ("ø", "oe"), ("å", "aa"),
+        ("ß", "ss"), ("œ", "oe"), ("đ", "d"), ("ł", "l"), ("þ", "th"), ("ð", "d"),
+    ]
+
+    /// The bundle's executable filename: `webwrap-<slug>`, so each generated app has a
+    /// distinct, self-identifying process name — `pkill -x webwrap-dr-lyd` hits one app
+    /// while `pgrep webwrap` still finds them all. (Every app used to be `webwrap-host`,
+    /// so a name-matching kill took down every webwrap app at once.)
+    ///
+    /// Unlike `slug(from:)`, whose output is only a bundle-ID component, this becomes a
+    /// real filename — so it's additionally folded to ASCII (the name's whole purpose is
+    /// being typeable in a shell; `CharacterSet.alphanumerics` is Unicode-aware and would
+    /// otherwise pass `æ`/`ø` straight through) and length-capped.
+    static func executableName(for appName: String) -> String {
+        // Ligatures and stroked letters must be spelled out first: they're already Latin,
+        // so `.toLatin` leaves them and `.diacriticInsensitive` won't decompose them —
+        // without this, "Æbler & Øl" would lose those letters entirely rather than become
+        // "aebler-oel".
+        var text = appName
+        for (from, to) in Self.asciiSpellings {
+            text = text.replacingOccurrences(of: from, with: to, options: .caseInsensitive)
+        }
+        // Then transliterate non-Latin scripts and strip the remaining diacritics.
+        let ascii = text.applyingTransform(.toLatin, reverse: false) ?? text
+        let folded = ascii.folding(options: [.diacriticInsensitive], locale: Locale(identifier: "en_US"))
+        // Anything still non-ASCII (e.g. an unmapped script) is dropped by the filter, so
+        // the result is always shell-safe.
+        var slug = slug(from: folded).filter { $0.isASCII }
+        if slug.count > executableSlugLimit {
+            slug = String(slug.prefix(executableSlugLimit))
+        }
+        // A truncation or a filtered-out tail can leave a dangling hyphen.
+        while slug.hasSuffix("-") { slug.removeLast() }
+        return "webwrap-\(slug.isEmpty ? "app" : slug)"
     }
 
     /// The bundle identifier for an app: the explicit `override` if given, otherwise

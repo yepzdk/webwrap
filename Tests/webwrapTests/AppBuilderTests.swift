@@ -43,7 +43,7 @@ final class InfoPlistTests: XCTestCase {
                        creatorVersion: String = "0.3.0") -> String {
         AppBuilder.makeInfoPlist(
             name: name, url: url, bundleId: bundleId,
-            executable: "webwrap-host", iconFile: "AppIcon.icns",
+            executable: "webwrap-outlook", iconFile: "AppIcon.icns",
             width: width, height: height, showToolbar: showToolbar,
             toolbarStyle: toolbarStyle,
             progressBar: progressBar,
@@ -56,7 +56,7 @@ final class InfoPlistTests: XCTestCase {
 
     func testContainsExpectedKeysAndValues() {
         let xml = plist()
-        XCTAssertTrue(xml.contains("<key>CFBundleExecutable</key>\n    <string>webwrap-host</string>"))
+        XCTAssertTrue(xml.contains("<key>CFBundleExecutable</key>\n    <string>webwrap-outlook</string>"))
         XCTAssertTrue(xml.contains("<key>CFBundleIdentifier</key>\n    <string>dk.yepz.webwrap.outlook</string>"))
         XCTAssertTrue(xml.contains("<key>WebWrapURL</key>\n    <string>https://outlook.office.com</string>"))
         XCTAssertTrue(xml.contains("<key>WebWrapWidth</key>\n    <string>1200</string>"))
@@ -189,8 +189,73 @@ final class InfoPlistTests: XCTestCase {
 
         XCTAssertEqual(dict["CFBundleName"] as? String, "Tom & Jerry")
         XCTAssertEqual(dict["WebWrapURL"] as? String, "https://x.test/?a=1&b=2")
-        XCTAssertEqual(dict["CFBundleExecutable"] as? String, "webwrap-host")
+        XCTAssertEqual(dict["CFBundleExecutable"] as? String, "webwrap-outlook")
         let env = try XCTUnwrap(dict["LSEnvironment"] as? [String: Any])
         XCTAssertEqual(env["WEBWRAP_HOST"] as? String, "1")
+    }
+}
+
+// The executable name is per-app so each generated app has a distinct process name.
+// It becomes a real filename, so ASCII-safety and length matter (see #87).
+final class ExecutableNameTests: XCTestCase {
+    func testNamedAfterTheApp() {
+        XCTAssertEqual(AppBuilder.executableName(for: "DR Lyd"), "webwrap-dr-lyd")
+        XCTAssertEqual(AppBuilder.executableName(for: "WebReader"), "webwrap-webreader")
+        XCTAssertEqual(AppBuilder.executableName(for: "Microsoft Outlook!"),
+                       "webwrap-microsoft-outlook")
+    }
+
+    func testDistinctAppsGetDistinctNames() {
+        // The whole point: `pkill -x <name>` must hit one app, not all of them.
+        XCTAssertNotEqual(AppBuilder.executableName(for: "DR Lyd"),
+                          AppBuilder.executableName(for: "WebReader"))
+    }
+
+    func testAllNamesShareTheWebwrapPrefix() {
+        // …while `pgrep webwrap` still finds every webwrap app as a group.
+        for name in ["DR Lyd", "WebReader", "Æbler", "!!!", ""] {
+            XCTAssertTrue(AppBuilder.executableName(for: name).hasPrefix("webwrap-"), name)
+        }
+    }
+
+    func testNordicAndGermanLettersAreSpelledOutNotDropped() {
+        // Folding alone would delete these (no decomposable diacritic), mangling the name.
+        XCTAssertEqual(AppBuilder.executableName(for: "Æbler & Øl"), "webwrap-aebler-oel")
+        XCTAssertEqual(AppBuilder.executableName(for: "Århus Kommune"), "webwrap-aarhus-kommune")
+        XCTAssertEqual(AppBuilder.executableName(for: "Blåbær"), "webwrap-blaabaer")
+        XCTAssertEqual(AppBuilder.executableName(for: "Übergrößen Straße"),
+                       "webwrap-ubergrossen-strasse")
+    }
+
+    func testAccentsAreFolded() {
+        XCTAssertEqual(AppBuilder.executableName(for: "Café Crème"), "webwrap-cafe-creme")
+    }
+
+    func testResultIsAlwaysASCII() {
+        // A shell-typeable name is the point; unmapped scripts transliterate or drop.
+        for name in ["日本語アプリ", "Привет", "مرحبا", "Æøå"] {
+            let exec = AppBuilder.executableName(for: name)
+            XCTAssertTrue(exec.allSatisfy { $0.isASCII }, "\(name) → \(exec)")
+            XCTAssertTrue(exec.hasPrefix("webwrap-"), name)
+        }
+    }
+
+    func testEmptyAndPunctuationOnlyNamesFallBack() {
+        XCTAssertEqual(AppBuilder.executableName(for: ""), "webwrap-app")
+        XCTAssertEqual(AppBuilder.executableName(for: "!!!"), "webwrap-app")
+        XCTAssertEqual(AppBuilder.executableName(for: "   "), "webwrap-app")
+    }
+
+    func testLongNamesStayWithinFilesystemLimits() {
+        // A 255-byte filename is the APFS/HFS+ ceiling; the copy would throw past it.
+        let exec = AppBuilder.executableName(for: String(repeating: "Very Long Name ", count: 40))
+        XCTAssertLessThan(exec.utf8.count, 255)
+        XCTAssertLessThanOrEqual(exec.count, "webwrap-".count + AppBuilder.executableSlugLimit)
+        XCTAssertFalse(exec.hasSuffix("-"), "truncation must not leave a dangling hyphen")
+    }
+
+    func testNoLeadingOrTrailingHyphenInSlug() {
+        XCTAssertEqual(AppBuilder.executableName(for: "  spaced  out  "), "webwrap-spaced-out")
+        XCTAssertEqual(AppBuilder.executableName(for: "-dashed-"), "webwrap-dashed")
     }
 }
