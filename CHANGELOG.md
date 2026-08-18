@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- The start page of a handler-only app (`create --no-url`) is now a working front door
+  instead of a dead end: paste or type a URL to open it, pick from the recent articles you
+  read in the reader, and set type and theme before opening anything. (#91)
+
 ### Changed
 - Generated apps now get their own executable name, `webwrap-<app-name>`, instead of every
   app sharing `webwrap-host`. Each app is identifiable in Activity Monitor and can be

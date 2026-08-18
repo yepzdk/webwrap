@@ -159,7 +159,9 @@ You can go all the way and create an app that is *only* a link receiver — no h
 webwrap create -n "Reader" --no-url
 ```
 
-A handler-only app opens to a quiet built-in start page and waits for links; URL handling and off-domain acceptance are enabled automatically (that's the app's whole job), and Home (⌘⇧H) returns to the start page. Give it a URL later with `webwrap update --url …` to convert it into a normal site app.
+A handler-only app opens to a built-in start page; URL handling and off-domain acceptance are enabled automatically (that's the app's whole job), and Home (⌘⇧H) returns to it. Give it a URL later with `webwrap update --url …` to convert it into a normal site app.
+
+The start page is the app's front door, so it's set up to get you reading: **paste or type a URL** and press Open (⇧⌘O still opens a copied link), pick one of the **recent articles** you've read in the reader, or set type and theme with the **Aa** button before opening anything. With nothing read yet it explains how to route links in.
 
 ### Reader mode
 
