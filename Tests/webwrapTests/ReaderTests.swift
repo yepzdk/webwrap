@@ -163,6 +163,21 @@ final class ReaderPageTests: XCTestCase {
         XCTAssertTrue(html.contains("data-theme=\"black\""))
     }
 
+    func testPopoverButtonsAndPanelsAreLabelled() {
+        // The chrome buttons are unlabelled visually, so each needs a hover tooltip and
+        // each panel must name itself once opened.
+        let html = ReaderPage.html(article: article, backgroundColor: nil)
+        XCTAssertTrue(html.contains("title=\"Recent articles\""))
+        XCTAssertTrue(html.contains("title=\"Text &amp; appearance\""))
+        XCTAssertTrue(html.contains(">Last \(ReaderHistory.limit) reads</h2>"))
+        XCTAssertTrue(html.contains(">Text &amp; appearance</h2>"))
+        XCTAssertTrue(html.contains("aria-labelledby=\"readerRecentsTitle\""))
+        XCTAssertTrue(html.contains("aria-labelledby=\"readerPanelTitle\""))
+        // The A/A size row doesn't self-explain either.
+        XCTAssertTrue(html.contains("title=\"Smaller text\""))
+        XCTAssertTrue(html.contains("title=\"Larger text\""))
+    }
+
     func testContainsAppearancePopoverAndBridge() {
         let html = ReaderPage.html(article: article, backgroundColor: nil)
         XCTAssertTrue(html.contains("id=\"readerAa\""))

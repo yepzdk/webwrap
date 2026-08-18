@@ -351,29 +351,44 @@ enum ReaderPage {
           .swatch-sepia { background: #f4ecd8; }
           .swatch-dark { background: #1c1c1e; }
           .swatch-black { background: #000000; }
+          /* Popover headings — the popovers are opened from unlabelled icon buttons, so
+             each one names itself once opened. */
+          .panel-title {
+            margin: 0; padding: 2px 2px 8px; border-bottom: 1px solid var(--border);
+            font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
+            text-transform: uppercase; color: var(--muted);
+          }
+          /* The recents panel puts padding on its rows, so its heading carries its own. */
+          #readerRecents .panel-title { margin: 2px 6px 4px; padding: 2px 2px 8px; }
         </style>
         </head>
         <body>
           <div class="reader-controls">
             <div class="reader-control">
-              <button id="readerRecentsBtn" aria-label="Recent articles" aria-haspopup="true"
+              <button id="readerRecentsBtn" aria-label="Recent articles"
+                      title="Recent articles" aria-haspopup="true"
                       aria-expanded="false" aria-controls="readerRecents">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                      stroke-width="2" stroke-linecap="round" aria-hidden="true">
                   <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>
                 </svg>
               </button>
-              <div id="readerRecents" hidden>
+              <div id="readerRecents" hidden aria-labelledby="readerRecentsTitle">
+                <h2 class="panel-title" id="readerRecentsTitle">Last \(ReaderHistory.limit) reads</h2>
                 \(recentsBody)
               </div>
             </div>
             <div class="reader-control">
-              <button id="readerAa" aria-label="Reader appearance" aria-haspopup="true"
+              <button id="readerAa" aria-label="Reader appearance"
+                      title="Text &amp; appearance" aria-haspopup="true"
                       aria-expanded="false" aria-controls="readerPanel">Aa</button>
-              <div id="readerPanel" hidden>
+              <div id="readerPanel" hidden aria-labelledby="readerPanelTitle">
+                <h2 class="panel-title" id="readerPanelTitle">Text &amp; appearance</h2>
                 <div class="seg" role="group" aria-label="Font size">
-                  <button data-step="-1" aria-label="Decrease font size"><span class="a-small">A</span></button>
-                  <button data-step="1" aria-label="Increase font size"><span class="a-large">A</span></button>
+                  <button data-step="-1" aria-label="Decrease font size"
+                          title="Smaller text"><span class="a-small">A</span></button>
+                  <button data-step="1" aria-label="Increase font size"
+                          title="Larger text"><span class="a-large">A</span></button>
                 </div>
                 <div class="seg" role="group" aria-label="Font style">
                   <button data-key="fontFamily" data-value="serif">Serif</button>
