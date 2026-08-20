@@ -487,7 +487,75 @@ struct AppBuilder {
         }
 
         print("Notarized. Stapling ticket…")
-        try run("/usr/bin/xcrun", ["stapler", "staple", appPath], quiet: true)
+        try stapleTicket(appPath)
+    }
+
+    /// Number of `stapler staple` attempts before giving up. A freshly-accepted ticket
+    /// can take a moment to become fetchable from Apple's CDN, so the first attempt can
+    /// fail with "no ticket found" even though notarization itself succeeded.
+    static let stapleAttempts = 3
+
+    /// Seconds to wait *before* stapling attempt `attempt` (1-based). No wait before the
+    /// first try; a growing backoff after that so slow ticket propagation still resolves
+    /// without immediately re-hitting Apple. Pure, so it can be unit-tested.
+    static func stapleBackoff(beforeAttempt attempt: Int) -> UInt32 {
+        switch attempt {
+        case ...1: return 0
+        case 2: return 5
+        case 3: return 15
+        default: return 30
+        }
+    }
+
+    /// Staples the notary ticket, retrying with a backoff (the ticket can lag behind
+    /// acceptance), then confirms it is actually attached with `stapler validate` before
+    /// returning — `stapler staple` has been seen to exit 0 without attaching a ticket,
+    /// which is exactly how "notarized" apps ship unstapled and fail Gatekeeper offline.
+    /// On exhaustion it throws with the stapler's own output and the manual recovery
+    /// command, rather than swallowing the failure and reporting success.
+    private func stapleTicket(_ appPath: String) throws {
+        var lastOutput = ""
+        for attempt in 1...Self.stapleAttempts {
+            if attempt > 1 {
+                let delay = Self.stapleBackoff(beforeAttempt: attempt)
+                print("Ticket not ready yet; retrying staple in \(delay)s (attempt \(attempt) of \(Self.stapleAttempts))…")
+                sleep(delay)
+            }
+
+            let (stapleStatus, stapleOutput) = try runCapturingAll(
+                "/usr/bin/xcrun", ["stapler", "staple", appPath])
+            lastOutput = stapleOutput
+
+            if stapleStatus == 0 {
+                // Don't trust the exit code alone: validate that the ticket is really
+                // attached before claiming success.
+                let (validateStatus, validateOutput) = try runCapturingAll(
+                    "/usr/bin/xcrun", ["stapler", "validate", appPath])
+                if validateStatus == 0 {
+                    print("Stapled and validated.")
+                    return
+                }
+                lastOutput = validateOutput
+            }
+        }
+
+        throw RuntimeError(Self.notStapledMessage(appPath: appPath, output: lastOutput))
+    }
+
+    /// The error shown when stapling never succeeds. The app *is* notarized (it passes
+    /// Gatekeeper on machines that can reach Apple), it just lacks the offline ticket —
+    /// so the message says exactly that, surfaces the stapler's own output instead of
+    /// hiding it, and gives the command to finish the job once the ticket propagates.
+    /// Pure, so it can be unit-tested.
+    static func notStapledMessage(appPath: String, output: String) -> String {
+        let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        let detail = trimmed.isEmpty ? "" : "\n\(trimmed)"
+        return """
+            The app was notarized but the ticket could not be stapled.\(detail)
+            It will still pass Gatekeeper on machines that can reach Apple online, but not \
+            offline. Staple it manually once the ticket propagates:
+              xcrun stapler staple "\(appPath)"
+            """
     }
 
     /// Best-effort retrieval of the detailed notary log for a failed submission, so the

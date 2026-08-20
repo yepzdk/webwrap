@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- `create`/`update` with `--notarize` no longer reports success when the notary ticket
+  wasn't actually stapled. Stapling now retries with a backoff (the ticket can lag behind
+  acceptance), confirms the ticket is attached with `xcrun stapler validate` before
+  reporting success, and — if it still fails — surfaces the stapler's own output and tells
+  you the app is notarized but not stapled, with the manual `xcrun stapler staple` command
+  to finish the job. (WEBWRAP-004)
+
 ### Added
 - Copying the current URL (⌘⇧C, Edit → Copy Current URL) now shows a brief
   "Current URL copied" confirmation toast that fades out on its own, so the previously
