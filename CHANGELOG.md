@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- Copying the current URL (⌘⇧C, Edit → Copy Current URL) now shows a brief
+  "Current URL copied" confirmation toast that fades out on its own, so the previously
+  silent copy gives on-screen feedback. (WEBWRAP-003)
+
 ## [0.8.0] - 2026-08-18
 
 ### Added
