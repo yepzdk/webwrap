@@ -454,7 +454,8 @@ struct AppBuilder {
 
     /// Submits the signed bundle to Apple's notary service and, on acceptance, staples
     /// the ticket so the app passes Gatekeeper offline. Zips the bundle for submission
-    /// (notarytool requires an archive, not a raw `.app`).
+    /// (notarytool requires an archive, not a raw `.app`). The staple is retried and
+    /// *verified* rather than assumed — see `staple(_:)`.
     private func notarizeAndStaple(_ appPath: String) throws {
         guard let notaryProfile else {
             throw RuntimeError("Notarization requires a --notary-profile.")
@@ -487,7 +488,78 @@ struct AppBuilder {
         }
 
         print("Notarized. Stapling ticket…")
-        try run("/usr/bin/xcrun", ["stapler", "staple", appPath], quiet: true)
+        try staple(appPath)
+    }
+
+    /// Waits (in seconds) before each staple retry; the first attempt is immediate, so this
+    /// is `count + 1` attempts over roughly a minute.
+    ///
+    /// Apple distributes the notary ticket asynchronously, so a staple attempted the moment
+    /// `notarytool --wait` returns "Accepted" routinely can't find it yet. Observed in
+    /// practice: accepted at 13:10:03Z, first successful staple at 13:12:14Z.
+    static let stapleRetryDelays: [TimeInterval] = [2, 5, 10, 20, 30]
+
+    /// Staples the notary ticket to the bundle and verifies it actually landed.
+    ///
+    /// Every attempt is checked with `stapler validate` rather than trusted on exit status:
+    /// `stapler staple` can exit 0 without having attached a ticket, which is how an
+    /// unstapled app was reported as a complete success (#97). A bundle with no stapled
+    /// ticket makes Gatekeeper fetch it online at first launch, so it fails for exactly the
+    /// offline recipient the signing was for.
+    ///
+    /// Retries unconditionally rather than trying to tell a transient ticket-lag failure
+    /// from a permanent one: that would mean matching Apple's undocumented message strings,
+    /// and guessing wrong reintroduces this bug. The whole budget is ~1 minute, and a
+    /// permanent failure just reports the honest error a minute later.
+    private func staple(_ appPath: String) throws {
+        var lastOutput = ""
+        // A leading 0 keeps "first attempt is immediate" in the loop instead of duplicating
+        // the call above it.
+        for (attempt, delay) in ([0] + Self.stapleRetryDelays).enumerated() {
+            if delay > 0 {
+                print("Ticket not available yet — retrying in \(Int(delay))s…")
+                Thread.sleep(forTimeInterval: delay)
+            }
+            // `try` here only propagates a launch failure (xcrun missing), which is a
+            // genuinely different problem; a non-zero exit is data we act on below.
+            let (_, stapleOut) = try runCapturingAll(
+                "/usr/bin/xcrun", ["stapler", "staple", appPath])
+            let (validateStatus, validateOut) = try runCapturingAll(
+                "/usr/bin/xcrun", ["stapler", "validate", appPath])
+            if validateStatus == 0 {
+                if attempt > 0 { print("Ticket stapled and verified.") }
+                return
+            }
+            lastOutput = [stapleOut, validateOut]
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .joined(separator: "\n")
+        }
+        throw RuntimeError(Self.stapleFailureMessage(appPath: appPath, output: lastOutput))
+    }
+
+    /// The message for a notarized-but-unstapled bundle. Pure, so the wording — which has to
+    /// make clear the app *is* notarized and hand back a copy-pasteable fix — is unit-tested.
+    /// `output` is the captured stapler text and may be empty.
+    static func stapleFailureMessage(appPath: String, output: String) -> String {
+        let detail = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        let outputSection = detail.isEmpty ? "" : "\n\nstapler said:\n\(detail)"
+        return """
+            Notarization succeeded, but stapling the ticket failed after \
+            \(stapleRetryDelays.count + 1) attempts.
+
+            The app IS notarized — Apple accepted it — but the ticket is NOT stapled to the \
+            bundle, so Gatekeeper on the recipient's Mac has to fetch it online at first \
+            launch and will refuse the app offline. The bundle was left in place.
+
+            Apple's ticket distribution can lag acceptance by a few minutes. Retry by hand:
+              xcrun stapler staple "\(appPath)"
+              xcrun stapler validate "\(appPath)"
+
+            Don't judge this with `spctl -a -vvv`: on the machine that signed the app it \
+            reports "accepted" even with no ticket stapled. `stapler validate` is the \
+            honest check.\(outputSection)
+            """
     }
 
     /// Best-effort retrieval of the detailed notary log for a failed submission, so the
