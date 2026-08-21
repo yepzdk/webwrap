@@ -517,12 +517,16 @@ struct AppBuilder {
         // the call above it.
         for (attempt, delay) in ([0] + Self.stapleRetryDelays).enumerated() {
             if delay > 0 {
-                print("Ticket not available yet — retrying in \(Int(delay))s…")
+                // Deliberately doesn't blame ticket lag: the loop retries on ANY failed
+                // verification, and a malformed bundle fails validation (exit 66) for
+                // reasons that have nothing to do with Apple's distribution. Claiming a
+                // cause we haven't established would misdiagnose those.
+                print("Staple not verified yet — retrying in \(Int(delay))s…")
                 Thread.sleep(forTimeInterval: delay)
             }
             // `try` here only propagates a launch failure (xcrun missing), which is a
             // genuinely different problem; a non-zero exit is data we act on below.
-            let (_, stapleOut) = try runCapturingAll(
+            let (stapleStatus, stapleOut) = try runCapturingAll(
                 "/usr/bin/xcrun", ["stapler", "staple", appPath])
             let (validateStatus, validateOut) = try runCapturingAll(
                 "/usr/bin/xcrun", ["stapler", "validate", appPath])
@@ -530,12 +534,25 @@ struct AppBuilder {
                 if attempt > 0 { print("Ticket stapled and verified.") }
                 return
             }
-            lastOutput = [stapleOut, validateOut]
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
-                .joined(separator: "\n")
+            lastOutput = Self.stapleDiagnostics(
+                staple: (stapleStatus, stapleOut), validate: (validateStatus, validateOut))
         }
         throw RuntimeError(Self.stapleFailureMessage(appPath: appPath, output: lastOutput))
+    }
+
+    /// Labels the two commands' captured output so the failure message says which one
+    /// complained, and with what exit status. `runCapturingAll` merges stdout and stderr, so
+    /// without labels the blocks are indistinguishable — and recovering these diagnostics is
+    /// the point of #97. Pure, so the formatting is unit-testable; empty blocks are dropped
+    /// rather than left as bare headers.
+    static func stapleDiagnostics(staple: (Int32, String), validate: (Int32, String)) -> String {
+        [("stapler staple", staple), ("stapler validate", validate)]
+            .compactMap { label, result -> String? in
+                let text = result.1.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !text.isEmpty else { return nil }
+                return "\(label) (exit \(result.0)):\n\(text)"
+            }
+            .joined(separator: "\n\n")
     }
 
     /// The message for a notarized-but-unstapled bundle. Pure, so the wording — which has to
@@ -552,7 +569,10 @@ struct AppBuilder {
             bundle, so Gatekeeper on the recipient's Mac has to fetch it online at first \
             launch and will refuse the app offline. The bundle was left in place.
 
-            Apple's ticket distribution can lag acceptance by a few minutes. Retry by hand:
+            Most often this is just Apple's ticket distribution lagging acceptance, in which \
+            case retrying by hand in a minute works; the stapler output below says whether \
+            something else is wrong.
+
               xcrun stapler staple "\(appPath)"
               xcrun stapler validate "\(appPath)"
 

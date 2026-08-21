@@ -92,3 +92,47 @@ final class StapleFailureMessageTests: XCTestCase {
         }
     }
 }
+
+// The two commands' output is merged by runCapturingAll (stdout+stderr in one pipe), so the
+// failure message has to say which one complained — recovering these diagnostics is the whole
+// point of #97.
+final class StapleDiagnosticsTests: XCTestCase {
+    func testLabelsBothCommandsWithTheirExitStatus() {
+        let d = AppBuilder.stapleDiagnostics(staple: (0, "stapled ok-ish"),
+                                             validate: (65, "does not have a ticket"))
+        XCTAssertTrue(d.contains("stapler staple (exit 0):"))
+        XCTAssertTrue(d.contains("stapler validate (exit 65):"))
+        XCTAssertTrue(d.contains("stapled ok-ish"))
+        XCTAssertTrue(d.contains("does not have a ticket"))
+    }
+
+    func testAttributesOutputToTheRightCommand() {
+        // The bug this guards: unlabelled concatenation made it impossible to tell whether
+        // staple or validate produced a given line.
+        let d = AppBuilder.stapleDiagnostics(staple: (1, "STAPLE_SAID"),
+                                             validate: (66, "VALIDATE_SAID"))
+        let stapleIdx = d.range(of: "STAPLE_SAID")!.lowerBound
+        let validateIdx = d.range(of: "VALIDATE_SAID")!.lowerBound
+        XCTAssertTrue(d.range(of: "stapler staple (exit 1):")!.lowerBound < stapleIdx)
+        XCTAssertTrue(d.range(of: "stapler validate (exit 66):")!.lowerBound < validateIdx)
+        XCTAssertTrue(stapleIdx < validateIdx)
+    }
+
+    func testDropsSilentCommandsRatherThanLeavingBareHeaders() {
+        // stapler often says nothing on success; a header with no body is noise.
+        let onlyValidate = AppBuilder.stapleDiagnostics(staple: (0, "   "),
+                                                        validate: (65, "no ticket"))
+        XCTAssertFalse(onlyValidate.contains("stapler staple"))
+        XCTAssertTrue(onlyValidate.contains("stapler validate (exit 65):"))
+
+        let neither = AppBuilder.stapleDiagnostics(staple: (0, ""), validate: (65, "\n\t "))
+        XCTAssertTrue(neither.isEmpty)
+    }
+
+    func testEmptyDiagnosticsProduceNoOutputSectionInTheMessage() {
+        // Ties the two pure pieces together: nothing captured → no dangling "stapler said:".
+        let d = AppBuilder.stapleDiagnostics(staple: (0, ""), validate: (65, ""))
+        XCTAssertFalse(AppBuilder.stapleFailureMessage(appPath: "/tmp/X.app", output: d)
+            .contains("stapler said:"))
+    }
+}
