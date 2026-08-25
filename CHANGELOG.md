@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- Reader mode is now feature-frozen; the dedicated reading app continues as
+  [yepzdk/webreader](https://github.com/yepzdk/webreader), split out of this code. Fixes still
+  land here; new reader features don't.
+
 ## [0.8.0] - 2026-08-18
 
 ### Added

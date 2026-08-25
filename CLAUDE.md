@@ -72,3 +72,4 @@ Generated apps are **ad-hoc signed by default**. For distribution, `create`/`upd
 - Single window per app; no tabs.
 - Per-app session isolation requires macOS 14+ (`WKWebsiteDataStore(forIdentifier:)`); on macOS 13 apps share the default persistent store. See `Host.makeDataStore()`. The session is keyed to the bundle identifier, which `update` keeps stable so logins survive an update/rename.
 - No `remove` subcommand: `list` exists, but removing an app is left to the Trash (deliberate — see issue #5).
+- Reader mode is **feature-frozen** at its 0.8.0 shape (⇧⌘R, `--reader`, Aa popover, recents, start page, progress line). Reader-app features — read-aloud, similar-article feeds, iOS/sync — belong in [yepzdk/webreader](https://github.com/yepzdk/webreader), which was split out of this code in August 2026. Bug fixes here are fine; new reader features are not.
