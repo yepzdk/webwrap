@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Copying the current URL (⌘⇧C, Edit → Copy Current URL) now shows a brief
   "Current URL copied" confirmation toast that fades out on its own, so the previously
   silent copy gives on-screen feedback. (WEBWRAP-003)
+- History navigation now answers the mouse's back and forward buttons, alongside the
+  existing two-finger swipe, toolbar buttons, and ⌘[ / ⌘]. (#104)
 
 ### Changed
 - Reader mode is now feature-frozen; the dedicated reading app continues as

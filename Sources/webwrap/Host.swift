@@ -225,10 +225,21 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         window.title = title
         window.setFrameAutosaveName("WebWrapMainWindow") // remembers size/position per app
 
-        webView = WKWebView(frame: window.contentView!.bounds, configuration: config)
+        let navigatingWebView = NavigatingWebView(frame: window.contentView!.bounds,
+                                                  configuration: config)
+        // Mouse back/forward buttons run the same actions as the menu and toolbar, so
+        // reader view and empty history behave the same whichever route you take.
+        navigatingWebView.onNavigate = { [weak self] direction in
+            switch direction {
+            case .back: self?.goBack(nil)
+            case .forward: self?.goForward(nil)
+            }
+        }
+        webView = navigatingWebView
         webView.autoresizingMask = [.width, .height]
         webView.navigationDelegate = self
         webView.uiDelegate = self
+        // Two-finger swipe between pages, the trackpad counterpart to the mouse buttons.
         webView.allowsBackForwardNavigationGestures = true
         // Chrome/Edge presets and custom strings replace the whole UA; nil keeps the
         // Safari-suffixed default from applicationNameForUserAgent above.
@@ -1419,6 +1430,39 @@ func runHost() {
     app.run()
 }
 
+/// A `WKWebView` that answers the mouse's dedicated back/forward buttons, which WebKit
+/// itself ignores (#104).
+///
+/// Subclassed rather than watched with `NSEvent.addLocalMonitorForEvents` because a monitor
+/// is application-wide: it would also fire over the Settings window and the About panel,
+/// where there is no history to navigate.
+final class NavigatingWebView: WKWebView {
+    /// Called with the direction when a navigation button is pressed. The host points this
+    /// at the same actions the menu and toolbar use, so every route through history behaves
+    /// identically.
+    var onNavigate: ((HostNavigation.MouseNavigation) -> Void)?
+
+    override func otherMouseDown(with event: NSEvent) {
+        guard let direction = HostNavigation.mouseNavigation(buttonNumber: event.buttonNumber) else {
+            super.otherMouseDown(with: event)
+            return
+        }
+        onNavigate?(direction)
+    }
+
+    // The matching up and drag events are swallowed too: forwarding them would hand the page
+    // a mouseup with no mousedown, which scripts listening for drags misread.
+    override func otherMouseUp(with event: NSEvent) {
+        guard HostNavigation.mouseNavigation(buttonNumber: event.buttonNumber) == nil else { return }
+        super.otherMouseUp(with: event)
+    }
+
+    override func otherMouseDragged(with event: NSEvent) {
+        guard HostNavigation.mouseNavigation(buttonNumber: event.buttonNumber) == nil else { return }
+        super.otherMouseDragged(with: event)
+    }
+}
+
 /// Pure mapping from a web view's `estimatedProgress` (0...1) to what the top-edge progress
 /// line should show. Kept free of AppKit so the floor/threshold logic is unit-testable; the
 /// view animation itself lives in `HostDelegate`.
@@ -1471,6 +1515,27 @@ enum HostNavigation {
     /// menu item is enabled, so the two can't disagree.
     static func urlToCopy(currentURL: URL?) -> String? {
         currentURL?.absoluteString
+    }
+
+    /// History navigation for the dedicated back/forward buttons found on most mice.
+    ///
+    /// AppKit numbers them from the primary button: 0 left, 1 right, 2 middle, then 3 and 4
+    /// for the side buttons. WKWebView ignores 3 and 4 entirely — Safari maps them in the
+    /// app, not the engine — so an unwrapped mouse press does nothing (#104).
+    ///
+    /// Middle click (2) is deliberately left alone: pages use it for open-in-background and
+    /// autoscroll, and swallowing it would break them.
+    static func mouseNavigation(buttonNumber: Int) -> MouseNavigation? {
+        switch buttonNumber {
+        case 3: return .back
+        case 4: return .forward
+        default: return nil
+        }
+    }
+
+    enum MouseNavigation: Equatable {
+        case back
+        case forward
     }
 
     /// Whether an incoming URL (e.g. routed from Choosy or `open -a`) should be loaded
