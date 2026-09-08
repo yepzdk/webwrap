@@ -515,7 +515,7 @@ struct AppBuilder {
         var lastOutput = ""
         // A leading 0 keeps "first attempt is immediate" in the loop instead of duplicating
         // the call above it.
-        for (attempt, delay) in ([0] + Self.stapleRetryDelays).enumerated() {
+        for delay in [0] + Self.stapleRetryDelays {
             if delay > 0 {
                 // Deliberately doesn't blame ticket lag: the loop retries on ANY failed
                 // verification, and a malformed bundle fails validation (exit 66) for
@@ -531,7 +531,10 @@ struct AppBuilder {
             let (validateStatus, validateOut) = try runCapturingAll(
                 "/usr/bin/xcrun", ["stapler", "validate", appPath])
             if validateStatus == 0 {
-                if attempt > 0 { print("Ticket stapled and verified.") }
+                // Printed on every success, including the first attempt: a run that says
+                // nothing after "Stapling ticket…" is indistinguishable from #97's silent
+                // false success, and this line is the evidence the ticket was verified.
+                print("Ticket stapled and verified.")
                 return
             }
             lastOutput = Self.stapleDiagnostics(
