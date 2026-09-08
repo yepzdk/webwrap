@@ -34,6 +34,13 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     /// width constraint when `estimatedProgress` hasn't moved the displayed value.
     private var progressFraction: Double = 0
 
+    /// The transient "copied" toast overlay, nil when none is showing. Only ever one at a
+    /// time; a re-copy replaces it rather than stacking.
+    private var toast: NSView?
+    /// The pending auto-dismiss for the current toast, cancelable so a rapid re-copy
+    /// restarts the timer instead of hiding the fresh toast mid-fade.
+    private var toastDismiss: DispatchWorkItem?
+
     /// The site URL the app is meant to show, kept so the offline fallback's Retry can
     /// reload it (the web view's own `url` is the about:blank/data page while the error
     /// screen is up).
@@ -631,6 +638,7 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(url, forType: .string)
+        showToast("Current URL copied")
     }
 
     // Enable/disable our self-targeted menu items to match what's actually possible:
@@ -714,6 +722,82 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
         let isInstalled = progressBar != nil
         guard enabled != isInstalled else { return }
         if enabled { installProgressBar() } else { removeProgressBar() }
+    }
+
+    // MARK: - Toast
+
+    /// Shows a brief, self-dismissing confirmation overlay near the bottom-center of the
+    /// content view. Modeled on the progress bar: a native view added above the web view,
+    /// constrained to the content view, faded in/out via `NSAnimationContext`. Only one
+    /// toast exists at a time — a repeated call replaces the current one and restarts the
+    /// dismiss timer, so rapid re-copies neither stack nor flicker.
+    private func showToast(_ message: String) {
+        guard let container = window.contentView else { return }
+
+        // Replace any toast already on screen (single-toast invariant).
+        removeToast()
+
+        let toastView = NSView()
+        toastView.translatesAutoresizingMaskIntoConstraints = false
+        toastView.wantsLayer = true
+        toastView.layer?.cornerRadius = 8
+        toastView.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.8).cgColor
+
+        let label = NSTextField(labelWithString: message)
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.isEditable = false
+        label.isBordered = false
+        label.isSelectable = false
+        label.drawsBackground = false
+        label.alignment = .center
+        label.textColor = .white
+
+        toastView.addSubview(label)
+        container.addSubview(toastView, positioned: .above, relativeTo: webView)
+
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: toastView.leadingAnchor, constant: 16),
+            label.trailingAnchor.constraint(equalTo: toastView.trailingAnchor, constant: -16),
+            label.topAnchor.constraint(equalTo: toastView.topAnchor, constant: 8),
+            label.bottomAnchor.constraint(equalTo: toastView.bottomAnchor, constant: -8),
+            toastView.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            toastView.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -24),
+        ])
+        toast = toastView
+
+        // Fade in.
+        toastView.alphaValue = 0
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.2
+            toastView.animator().alphaValue = 1
+        }
+
+        // Fade out and tear down after a short hold; cancelable so a re-copy restarts it.
+        let dismiss = DispatchWorkItem { [weak self] in
+            guard let self, let toastView = self.toast else { return }
+            NSAnimationContext.runAnimationGroup({ ctx in
+                ctx.duration = 0.25
+                toastView.animator().alphaValue = 0
+            }, completionHandler: { [weak self] in
+                // Only tear down if this is still the toast we faded out (a re-copy in the
+                // meantime would have replaced it via removeToast()).
+                if self?.toast === toastView {
+                    toastView.removeFromSuperview()
+                    self?.toast = nil
+                }
+            })
+        }
+        toastDismiss = dismiss
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: dismiss)
+    }
+
+    /// Cancels any pending dismiss and removes the current toast immediately. Safe to call
+    /// when no toast is showing. Mirrors `removeProgressBar()`.
+    private func removeToast() {
+        toastDismiss?.cancel()
+        toastDismiss = nil
+        toast?.removeFromSuperview()
+        toast = nil
     }
 
     // MARK: - Background color

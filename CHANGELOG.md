@@ -7,13 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- Copying the current URL (⌘⇧C, Edit → Copy Current URL) now shows a brief
+  "Current URL copied" confirmation toast that fades out on its own, so the previously
+  silent copy gives on-screen feedback. (WEBWRAP-003)
+
+### Changed
+- Reader mode is now feature-frozen; the dedicated reading app continues as
+  [yepzdk/webreader](https://github.com/yepzdk/webreader), split out of this code. Fixes still
+  land here; new reader features don't.
+
 ### Fixed
-- `--notarize` could report a complete success while leaving the app **unstapled**, so the
-  ticket Gatekeeper needs offline was missing and the app was refused on the recipient's Mac.
-  Apple distributes the ticket a minute or two after accepting a submission, and webwrap
-  stapled once, immediately, without checking the result. Stapling is now retried over about
-  a minute and verified with `stapler validate`; if it still fails, the error says the app is
-  notarized but not stapled and gives the command to finish the job. (#97)
+- `--notarize` could report success while leaving the app unstapled, so Gatekeeper refused the
+  app offline on the recipient's Mac. Stapling is now retried for about a minute and verified
+  with `stapler validate`; on failure the error says the app is notarized but not stapled and
+  gives the command to finish the job. (#97)
 
 ## [0.8.0] - 2026-08-18
 

@@ -1,5 +1,9 @@
 # webwrap
 
+[![Release](https://img.shields.io/github/v/release/yepzdk/webwrap?label=release)](https://github.com/yepzdk/webwrap/releases/latest)
+[![CI](https://github.com/yepzdk/webwrap/actions/workflows/ci.yml/badge.svg)](https://github.com/yepzdk/webwrap/actions/workflows/ci.yml)
+[![Buy me a coffee](https://img.shields.io/badge/Buy_me_a_coffee-yepzdk-ffdd00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/yepzdk)
+
 Wrap any website into a standalone macOS `.app` — a lightweight, native alternative to Unite or WebCatalog. No Electron, no subscription. One small Swift binary that scaffolds a real `.app` bundle around a `WKWebView` host.
 
 ## How it works
@@ -179,6 +183,8 @@ webwrap create -n "Reader" --reader --no-url
 
 Two practical notes for a reader app: to get full text from sites that paywall logged-out visitors, **log in once inside the app** (⇧⌘R to the original page, sign in — the session persists). And to send an article over from the browser you're reading in (Choosy can't intercept pages you're already viewing): copy the URL and press **⇧⌘O** in the reader.
 
+Want a dedicated reading app rather than a wrapped site? [WebReader](https://github.com/yepzdk/webreader) began as exactly this command and is now its own project — read-aloud, feeds, and sync land there. webwrap's reader stays as it is.
+
 ### Links that leave the site
 
 By default, links you click that go **off-site** (and `target=_blank` popups) open in your **default browser** instead of navigating the app window — so a news link in an Outlook email doesn't strand the app on some article. Sign-in flows are unaffected: common SSO hosts (`login.microsoftonline.com`, `accounts.google.com`, …) and all automatic redirects stay inside the app, so logins land in the app's own session. `mailto:` and other app-scheme links are handed to macOS.
@@ -283,6 +289,10 @@ webwrap create -u https://app.example.com -n "Example" \
 webwrap signs the app, submits it to Apple's notary service (`notarytool submit --wait`), and on success staples the ticket. The result passes Gatekeeper with **no right-click and no `xattr`** on any Mac — verify with `spctl -a -vvv "Example.app"`. Notarization adds a few minutes while Apple processes the submission.
 
 Pass `--no-sign` to skip signing altogether. `--no-sign`/`--sign` are mutually exclusive, and `--notarize` requires both `--sign` and `--notary-profile`.
+
+## Support
+
+webwrap is free and open source. If it turned a tab you kept losing into an app you actually use, you can [buy me a coffee](https://buymeacoffee.com/yepzdk).
 
 ## License
 
