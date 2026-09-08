@@ -217,3 +217,26 @@ final class IsWebURLTests: XCTestCase {
         XCTAssertFalse(HostNavigation.isWebURL(URL(string: "mailto:a@b.com")!))
     }
 }
+
+final class MouseNavigationTests: XCTestCase {
+    func testSideButtonsNavigateHistory() {
+        XCTAssertEqual(HostNavigation.mouseNavigation(buttonNumber: 3), .back)
+        XCTAssertEqual(HostNavigation.mouseNavigation(buttonNumber: 4), .forward)
+    }
+
+    func testMiddleClickIsLeftToThePage() {
+        // Pages use button 2 for open-in-background and autoscroll; claiming it for
+        // navigation would break them.
+        XCTAssertNil(HostNavigation.mouseNavigation(buttonNumber: 2))
+    }
+
+    func testPrimaryButtonsAreNotTouched() {
+        XCTAssertNil(HostNavigation.mouseNavigation(buttonNumber: 0))
+        XCTAssertNil(HostNavigation.mouseNavigation(buttonNumber: 1))
+    }
+
+    func testUnknownButtonsAreIgnoredRatherThanGuessed() {
+        // Gaming mice report buttons well past the side pair; those belong to the page.
+        XCTAssertNil(HostNavigation.mouseNavigation(buttonNumber: 9))
+    }
+}

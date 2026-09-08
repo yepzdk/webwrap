@@ -185,6 +185,10 @@ Two practical notes for a reader app: to get full text from sites that paywall l
 
 Want a dedicated reading app rather than a wrapped site? [WebReader](https://github.com/yepzdk/webreader) began as exactly this command and is now its own project — read-aloud, feeds, and sync land there. webwrap's reader stays as it is.
 
+### Moving back and forward
+
+Four ways through the app's history, all equivalent: the **back/forward buttons on your mouse**, a **two-finger swipe** on the trackpad (macOS routes this through System Settings → Trackpad → More Gestures → "Swipe between pages"), **⌘[ / ⌘]**, and the navigation toolbar if the app has one. **⌘⇧H** goes home, back to the URL the app was created with.
+
 ### Links that leave the site
 
 By default, links you click that go **off-site** (and `target=_blank` popups) open in your **default browser** instead of navigating the app window — so a news link in an Outlook email doesn't strand the app on some article. Sign-in flows are unaffected: common SSO hosts (`login.microsoftonline.com`, `accounts.google.com`, …) and all automatic redirects stay inside the app, so logins land in the app's own session. `mailto:` and other app-scheme links are handed to macOS.
