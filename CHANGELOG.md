@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-09-08
+
 ### Added
 - Copying the current URL (⌘⇧C, Edit → Copy Current URL) now shows a brief
   "Current URL copied" confirmation toast that fades out on its own, so the previously
@@ -230,7 +232,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Test suite (`swift test`) covering `AppBuilder`'s pure helpers (slug, bundle id,
   `Info.plist` generation, XML escaping) plus the icon-resolution and CLI helpers.
 
-[Unreleased]: https://github.com/yepzdk/webwrap/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/yepzdk/webwrap/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/yepzdk/webwrap/compare/v0.8.0...v0.9.0
+[0.8.0]: https://github.com/yepzdk/webwrap/compare/v0.7.0...v0.8.0
+[0.7.0]: https://github.com/yepzdk/webwrap/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/yepzdk/webwrap/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/yepzdk/webwrap/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/yepzdk/webwrap/compare/v0.3.0...v0.4.0
