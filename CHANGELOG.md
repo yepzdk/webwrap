@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- The interactive background-color prompt now reports the same rule as
+  `--background-color`, so the two can't drift apart. (#54)
+
 ## [0.9.0] - 2026-09-08
 
 ### Added
