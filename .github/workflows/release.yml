@@ -17,6 +17,37 @@ jobs:
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v5
+        with:
+          # Tags are needed to work out the previous release for the compare link.
+          fetch-depth: 0
+
+      # Before anything expensive: a tag with no changelog section is a mistake, and
+      # generated notes are a raw PR list that reads like plumbing (#109).
+      - name: Build release notes from the changelog
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          awk -v heading="## [${VERSION}]" '
+            index($0, heading) == 1 { found = 1; next }
+            found && /^## \[/ { exit }
+            found && /^\[[^]]+\]: / { exit }
+            found { print }
+          ' CHANGELOG.md | sed -e '/./,$!d' > section.md
+          if ! grep -q '[^[:space:]]' section.md; then
+            echo "CHANGELOG.md has no '## [${VERSION}]' section." >&2
+            exit 1
+          fi
+          # Command substitution drops the section's surrounding blank lines, so the
+          # compare link sits one line below the last entry.
+          NOTES="$(cat section.md)"
+          PREV="$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)"
+          if [ -n "$PREV" ]; then
+            printf '%s\n\n**Full Changelog**: https://github.com/%s/compare/%s...%s\n' \
+              "$NOTES" "$GITHUB_REPOSITORY" "$PREV" "$GITHUB_REF_NAME" > notes.md
+          else
+            printf '%s\n' "$NOTES" > notes.md
+          fi
+          rm -f section.md
+          cat notes.md
 
       - name: Show toolchain
         run: swift --version
@@ -48,7 +79,7 @@ jobs:
           files: |
             webwrap-*.tar.gz
             webwrap-*.tar.gz.sha256
-          generate_release_notes: true
+          body_path: notes.md
 
   # Bump the Homebrew formula in the yepzdk/homebrew-tools tap to point at the
   # release this tag just built, so `brew upgrade webwrap` picks it up without a
