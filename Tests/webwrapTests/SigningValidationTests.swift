@@ -75,3 +75,26 @@ final class SigningDescriptionTests: XCTestCase {
             "Developer ID + notarized (Developer ID Application: X (T))")
     }
 }
+
+// The error text for a tool that exited non-zero. Losing this output is what made a
+// codesign failure unactionable (#105).
+final class ProcessFailureMessageTests: XCTestCase {
+    func testIncludesWhatTheToolSaid() {
+        let message = AppBuilder.processFailureMessage(
+            command: "/usr/bin/codesign", status: 1,
+            output: "error: The specified item could not be found in the keychain.")
+        XCTAssertTrue(message.contains("/usr/bin/codesign"))
+        XCTAssertTrue(message.contains("status 1"))
+        XCTAssertTrue(message.contains("could not be found in the keychain"))
+    }
+
+    func testSilentFailureStillNamesCommandAndStatus() {
+        // Some tools fail without a word; the message must not end in a dangling colon.
+        for silent in ["", "   ", "\n\t "] {
+            let message = AppBuilder.processFailureMessage(
+                command: "/usr/bin/iconutil", status: 65, output: silent)
+            XCTAssertEqual(message, "/usr/bin/iconutil exited with status 65.",
+                           "for \(silent.debugDescription)")
+        }
+    }
+}

@@ -406,7 +406,7 @@ struct AppBuilder {
         // /favicon.ico), which leaves the iconset incomplete and makes iconutil refuse
         // to build the .icns. Resizing from a single-image PNG avoids that entirely.
         let flat = (work as NSString).appendingPathComponent("source.png")
-        try run("/usr/bin/sips", ["-s", "format", "png", png, "--out", flat], quiet: true)
+        try run("/usr/bin/sips", ["-s", "format", "png", png, "--out", flat])
 
         // Standard iconset sizes. sips upscales/downscales as needed.
         let sizes: [(Int, String)] = [
@@ -424,12 +424,12 @@ struct AppBuilder {
 
         for (size, fileName) in sizes {
             let out = (work as NSString).appendingPathComponent(fileName)
-            try run("/usr/bin/sips", ["-z", "\(size)", "\(size)", flat, "--out", out], quiet: true)
+            try run("/usr/bin/sips", ["-z", "\(size)", "\(size)", flat, "--out", out])
         }
 
         // The flat source isn't a valid iconset entry name; remove it before iconutil.
         try? fm.removeItem(atPath: flat)
-        try run("/usr/bin/iconutil", ["-c", "icns", work, "-o", dest], quiet: true)
+        try run("/usr/bin/iconutil", ["-c", "icns", work, "-o", dest])
     }
 
     // MARK: - Signing
@@ -440,13 +440,12 @@ struct AppBuilder {
             // notarization and standard for apps distributed to other Macs.
             try run("/usr/bin/codesign",
                     ["--force", "--deep", "--options", "runtime",
-                     "--sign", signIdentity, appPath],
-                    quiet: true)
+                     "--sign", signIdentity, appPath])
         } else {
             // Ad-hoc signature (no Developer ID). Enough to satisfy Gatekeeper for a
             // locally-built app; for distribution to others, sign with a real identity
             // and notarize instead.
-            try run("/usr/bin/codesign", ["--force", "--deep", "--sign", "-", appPath], quiet: true)
+            try run("/usr/bin/codesign", ["--force", "--deep", "--sign", "-", appPath])
         }
     }
 
@@ -467,7 +466,7 @@ struct AppBuilder {
 
         // ditto preserves the bundle structure/symlinks that a plain zip would mangle.
         print("Zipping for notarization…")
-        try run("/usr/bin/ditto", ["-c", "-k", "--keepParent", appPath, zipPath], quiet: true)
+        try run("/usr/bin/ditto", ["-c", "-k", "--keepParent", appPath, zipPath])
 
         print("Submitting to Apple notary service (this can take a few minutes)…")
         let (status, output) = try runCapturingAll(
@@ -655,21 +654,27 @@ struct AppBuilder {
             .replacingOccurrences(of: "'", with: "&apos;")
     }
 
-    @discardableResult
-    private func run(_ launchPath: String, _ args: [String], quiet: Bool = false) throws -> Int32 {
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: launchPath)
-        proc.arguments = args
-        if quiet {
-            proc.standardOutput = FileHandle.nullDevice
-            proc.standardError = FileHandle.nullDevice
+    /// Runs a process and throws if it fails, with whatever the tool said about why.
+    ///
+    /// Output is always captured rather than streamed: none of the tools webwrap drives
+    /// (`sips`, `iconutil`, `codesign`, `ditto`) says anything useful on success, and
+    /// discarding it on failure loses the diagnosis — a signing error reported as a bare
+    /// exit status is unactionable (#105).
+    private func run(_ launchPath: String, _ args: [String]) throws {
+        let (status, output) = try runCapturingAll(launchPath, args)
+        guard status == 0 else {
+            throw RuntimeError(
+                Self.processFailureMessage(command: launchPath, status: status, output: output))
         }
-        try proc.run()
-        proc.waitUntilExit()
-        if proc.terminationStatus != 0 {
-            throw RuntimeError("\(launchPath) exited with status \(proc.terminationStatus).")
-        }
-        return proc.terminationStatus
+    }
+
+    /// The error for a tool that exited non-zero. Pure, so the shape — the command, its
+    /// status, and the captured text when there is any — is unit-testable. `output` is the
+    /// merged stdout/stderr and may be empty for a tool that failed silently.
+    static func processFailureMessage(command: String, status: Int32, output: String) -> String {
+        let detail = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !detail.isEmpty else { return "\(command) exited with status \(status)." }
+        return "\(command) exited with status \(status):\n\(detail)"
     }
 
     private func runCapturing(_ launchPath: String, _ args: [String]) throws -> String {
