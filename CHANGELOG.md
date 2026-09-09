@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- A failing `codesign`, `sips`, `iconutil` or `ditto` now reports what the tool actually
+  said instead of a bare exit status, so a signing error names the missing identity. (#105)
+
 ## [0.9.0] - 2026-09-08
 
 ### Added
