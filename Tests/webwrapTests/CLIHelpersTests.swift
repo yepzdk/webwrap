@@ -67,3 +67,29 @@ final class BackgroundColorValidationTests: XCTestCase {
         }
     }
 }
+
+// The `--x` / `--no-x` guards. Passing both is a contradiction the CLI must refuse rather
+// than silently pick a winner; nothing exercised these before (#55).
+final class ExclusiveFlagValidationTests: XCTestCase {
+    func testValueWithItsClearFlagIsRejected() {
+        XCTAssertThrowsError(try Create.validateExclusive(
+            value: "#1a73e8", clear: true, flag: "background-color")) { error in
+            XCTAssertEqual("\(error)",
+                           "`--background-color` and `--no-background-color` are mutually exclusive.")
+        }
+    }
+
+    func testEitherFlagAloneIsAccepted() {
+        XCTAssertNoThrow(try Create.validateExclusive(value: "safari", clear: false, flag: "user-agent"))
+        XCTAssertNoThrow(try Create.validateExclusive(value: nil, clear: true, flag: "user-agent"))
+        XCTAssertNoThrow(try Create.validateExclusive(value: nil, clear: false, flag: "user-agent"))
+    }
+
+    func testMessageNamesThePairItGuards() {
+        // Each call site passes its own flag name; a wrong one would misdirect the user.
+        XCTAssertThrowsError(try Create.validateExclusive(
+            value: "https://example.com", clear: true, flag: "url")) { error in
+            XCTAssertEqual("\(error)", "`--url` and `--no-url` are mutually exclusive.")
+        }
+    }
+}
