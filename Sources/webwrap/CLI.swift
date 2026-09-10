@@ -108,12 +108,9 @@ struct Update: ParsableCommand {
 
     func run() throws {
         try Create.validateSigning(noSign: noSign, sign: sign, notarize: notarize, notaryProfile: notaryProfile)
-        if backgroundColor != nil && noBackgroundColor {
-            throw ValidationError("`--background-color` and `--no-background-color` are mutually exclusive.")
-        }
-        if userAgent != nil && noUserAgent {
-            throw ValidationError("`--user-agent` and `--no-user-agent` are mutually exclusive.")
-        }
+        try Create.validateExclusive(value: backgroundColor, clear: noBackgroundColor,
+                                     flag: "background-color")
+        try Create.validateExclusive(value: userAgent, clear: noUserAgent, flag: "user-agent")
         if let backgroundColor { try Create.validate(backgroundColor: backgroundColor) }
         let toolbarStyleFlag = try toolbarSize.map { try Create.parse(toolbarSize: $0) }
 
@@ -425,9 +422,7 @@ struct Create: ParsableCommand {
 
     func run() throws {
         try Self.validateSigning(noSign: noSign, sign: sign, notarize: notarize, notaryProfile: notaryProfile)
-        if url != nil && noUrl {
-            throw ValidationError("`--url` and `--no-url` are mutually exclusive.")
-        }
+        try Self.validateExclusive(value: url, clear: noUrl, flag: "url")
         if let backgroundColor { try Self.validate(backgroundColor: backgroundColor) }
         if let toolbarSize { _ = try Self.parse(toolbarSize: toolbarSize) }
         // Note the implication so `--open-any-url` alone isn't silently inert.
@@ -700,6 +695,15 @@ struct Create: ParsableCommand {
         if notarize && (notaryProfile?.isEmpty ?? true) {
             throw ValidationError("`--notarize` requires `--notary-profile` "
                 + "(a `notarytool store-credentials` profile name).")
+        }
+    }
+
+    /// Rejects a value flag given together with the `--no-…` flag that clears it. One
+    /// helper for all three pairs (`--url`, `--background-color`, `--user-agent`) so the
+    /// wording can't drift and each guard is exercised by the same test. Pure — no I/O.
+    static func validateExclusive(value: String?, clear: Bool, flag: String) throws {
+        guard value == nil || !clear else {
+            throw ValidationError("`--\(flag)` and `--no-\(flag)` are mutually exclusive.")
         }
     }
 
