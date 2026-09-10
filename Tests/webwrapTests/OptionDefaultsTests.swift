@@ -151,6 +151,26 @@ final class ColorValidatorTests: XCTestCase {
         XCTAssertEqual(value("#1a73e8"), .some(.some("#1a73e8")))
     }
 
+    func testAgreesWithTheFlagPath() {
+        // The prompt and `--background-color` must accept and reject exactly the same
+        // values; the two encoding the rule separately is what #54 removed.
+        for input in ["#1a73e8", "#FFF", "#12345", "not-a-color", "blue", "rgb(0,0,0)"] {
+            let flagAccepts = (try? Create.validate(backgroundColor: input)) != nil
+            var promptAccepts = false
+            if case .valid = colorValidator(input) { promptAccepts = true }
+            XCTAssertEqual(flagAccepts, promptAccepts, "flag and prompt disagree on \(input)")
+        }
+    }
+
+    func testInvalidMessageStillOffersTheClearAndKeepOptions() {
+        guard case .invalid(let message) = colorValidator("blue") else {
+            return XCTFail("expected .invalid")
+        }
+        XCTAssertTrue(message.contains("hex color"), message)
+        XCTAssertTrue(message.contains("none"), message)
+        XCTAssertTrue(message.lowercased().contains("blank"), message)
+    }
+
     func testGarbageIsInvalid() {
         for token in ["nope", "blue"] {
             guard case .invalid = colorValidator(token) else {

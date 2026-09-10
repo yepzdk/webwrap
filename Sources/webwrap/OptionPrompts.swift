@@ -312,14 +312,17 @@ private func intValidator(_ input: String) -> Prompt.Validation<Int> {
 let clearBackgroundSentinel = "none"
 
 /// Accepts an empty-able hex color. The `none` sentinel clears the color (`.valid(nil)`);
-/// other non-empty input must parse via `CSSColor` — the parsed presence is what matters,
-/// so the original string is returned to be stored verbatim.
+/// other non-empty input must satisfy the same rule as `--background-color`, so the flag
+/// path and the prompt can't drift apart (#54) — the prompt only adds the two options that
+/// exist nowhere else. The original string is returned to be stored verbatim.
 func colorValidator(_ input: String) -> Prompt.Validation<String?> {
     if input.lowercased() == clearBackgroundSentinel {
         return .valid(nil)
     }
-    guard CSSColor.parse(input) != nil else {
-        return .invalid("Use a hex color like #1a73e8, 'none' to clear, or leave blank to keep.")
+    do {
+        try Create.validate(backgroundColor: input)
+    } catch {
+        return .invalid("\(error) Type '\(clearBackgroundSentinel)' to clear, or leave blank to keep.")
     }
     return .valid(input)
 }
