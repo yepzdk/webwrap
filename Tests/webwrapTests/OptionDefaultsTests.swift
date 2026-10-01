@@ -107,11 +107,13 @@ final class SettingsToResetTests: XCTestCase {
     private func reset(toolbar: Bool? = nil, toolbarStyle: ToolbarStyle? = nil,
                        progressBar: Bool? = nil,
                        backgroundColor: String? = nil, clearBackgroundColor: Bool = false,
+                       backgroundChanged: Bool = false,
                        userAgent: String? = nil, clearUserAgent: Bool = false)
         -> [HostSettings.Setting] {
         OptionDefaults.settingsToReset(
             toolbar: toolbar, toolbarStyle: toolbarStyle, progressBar: progressBar,
             backgroundColor: backgroundColor, clearBackgroundColor: clearBackgroundColor,
+            backgroundChanged: backgroundChanged,
             userAgent: userAgent, clearUserAgent: clearUserAgent)
     }
 
@@ -132,6 +134,12 @@ final class SettingsToResetTests: XCTestCase {
     func testClearingFlagsCountAsSettingTheValue() {
         XCTAssertEqual(reset(clearBackgroundColor: true), [.backgroundColor])
         XCTAssertEqual(reset(clearUserAgent: true), [.userAgent])
+    }
+
+    func testBackgroundFollowingAChangedURLCountsAsSettingIt() {
+        // `update --url <new>` adopts the new site's manifest color without a
+        // background flag; an in-app override must not keep shadowing it.
+        XCTAssertEqual(reset(backgroundChanged: true), [.backgroundColor])
     }
 
     func testSeveralFlagsAtOnce() {

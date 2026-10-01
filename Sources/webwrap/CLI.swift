@@ -263,6 +263,7 @@ struct Update: ParsableCommand {
             settingsToReset = OptionDefaults.settingsToReset(
                 toolbar: toolbar, toolbarStyle: toolbarStyleFlag, progressBar: progressBar,
                 backgroundColor: backgroundColor, clearBackgroundColor: noBackgroundColor,
+                backgroundChanged: merged.backgroundColor != existing.backgroundColor,
                 userAgent: userAgent, clearUserAgent: noUserAgent)
         }
 

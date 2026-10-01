@@ -132,16 +132,23 @@ enum OptionDefaults {
     /// in-app toggle, which would otherwise shadow the freshly baked default and make the
     /// update look like it did nothing (#118). Settings the command line didn't mention
     /// keep whatever the user chose in the app. Pure.
+    ///
+    /// The background is the one setting an update can change without a flag: a new
+    /// `--url` adopts the new site's manifest color, so `backgroundChanged` (the merged
+    /// color against the existing one) counts as setting it too.
     static func settingsToReset(toolbar: Bool?, toolbarStyle: ToolbarStyle?,
                                 progressBar: Bool?,
                                 backgroundColor: String?, clearBackgroundColor: Bool,
+                                backgroundChanged: Bool,
                                 userAgent: String?, clearUserAgent: Bool)
         -> [HostSettings.Setting] {
         var settings: [HostSettings.Setting] = []
         if toolbar != nil { settings.append(.toolbar) }
         if toolbarStyle != nil { settings.append(.toolbarStyle) }
         if progressBar != nil { settings.append(.progressBar) }
-        if backgroundColor != nil || clearBackgroundColor { settings.append(.backgroundColor) }
+        if backgroundColor != nil || clearBackgroundColor || backgroundChanged {
+            settings.append(.backgroundColor)
+        }
         if userAgent != nil || clearUserAgent { settings.append(.userAgent) }
         return settings
     }
