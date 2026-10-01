@@ -79,12 +79,25 @@ final class OptionDefaultsForUpdateTests: XCTestCase {
     }
 
     func testIconAndSigningAreNotSeededFromConfig() {
-        // Neither is persisted, so the seed is "keep existing" icon (nil) and ad-hoc signing.
+        // Neither is in the plist, so the seed is "keep existing" icon (nil) and — with
+        // nothing read off the bundle's signature — ad-hoc signing.
         let seed = OptionDefaults.forUpdate(existing: existing)
         XCTAssertNil(seed.iconPath)
         XCTAssertFalse(seed.noSign)
         XCTAssertNil(seed.signIdentity)
         XCTAssertFalse(seed.notarize)
+        XCTAssertNil(seed.notaryProfile)
+    }
+
+    func testSigningIsSeededFromTheBundlesOwnSignature() {
+        // Read from `codesign`/`stapler` by the caller, so the prompts default to
+        // re-signing as before instead of downgrading to ad-hoc (#117).
+        let seed = OptionDefaults.forUpdate(
+            existing: existing, signIdentity: "Developer ID Application: X (TEAMID)",
+            notarize: true)
+        XCTAssertEqual(seed.signIdentity, "Developer ID Application: X (TEAMID)")
+        XCTAssertTrue(seed.notarize)
+        // The notary profile isn't recoverable from the bundle — it's always re-entered.
         XCTAssertNil(seed.notaryProfile)
     }
 }

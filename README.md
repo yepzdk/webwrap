@@ -239,10 +239,12 @@ Run with just the app path on a terminal and `update` walks the same prompts as 
 | `--reader` / `--no-reader` | Open pages in the reader view automatically, or only via ⇧⌘R (current setting kept if omitted) |
 | `--background-color` / `--no-background-color` | Set or clear the window background color. If omitted, it follows the new `--url`'s manifest color when the URL changes, otherwise the current setting is kept |
 | `--user-agent` / `--no-user-agent` | Set the browser identity (`safari`/`chrome`/`edge` or a custom UA string) or reset it to the Safari default (current setting kept if omitted) |
-| `--sign`, `--notarize`, `--notary-profile`, `--no-sign` | Signing, same as `create` |
+| `--sign`, `--notarize`, `--notary-profile`, `--no-sign` | Signing, same as `create`. If omitted, a Developer ID signature on the existing app is carried over |
 | `--force` | Skip the confirmation prompt |
 
 The session survives because it's keyed to the app's bundle identifier, which `update` keeps stable even across a URL or name change. `update` refuses any bundle that isn't a webwrap app.
+
+The bundle is rebuilt and re-signed on every update, so the change summary always ends with a `Signing →` line saying what it will come back as. A Developer ID identity already on the app is read from its signature and reused, so a routine update can't downgrade a distributed app to ad-hoc; `--sign` picks a different identity and `--no-sign` opts out. **Notarization is the exception**: the notary profile isn't stored anywhere in the bundle, so repeat `--notarize --notary-profile <name>` on each update of an app you distribute — `update` warns when it's about to drop a stapled ticket.
 
 ### Settings inside the app
 

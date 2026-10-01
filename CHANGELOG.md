@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   looked like a redirect: query unwrapping now happens on known redirector hosts only,
   and a link whose cleaned form falls outside the app's site opens as it arrived
   instead of being dropped. (#119)
+- `update` no longer replaces a Developer ID signature with an ad-hoc one: the identity is
+  read from the app's own signature and reused unless `--sign` or `--no-sign` says
+  otherwise, the change summary now always says what the app will be signed with, and a
+  stapled notarization ticket that the rebuild can't keep is called out. (#117)
 
 ## [0.9.1] - 2026-09-10
 

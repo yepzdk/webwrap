@@ -64,10 +64,13 @@ enum OptionDefaults {
             notarize: notarize, notaryProfile: notaryProfile)
     }
 
-    /// Seed for interactive `update`, taken from the app's persisted config. Icon and signing
-    /// aren't persisted, so the icon seed is nil ("keep existing") and signing defaults to
-    /// ad-hoc — re-entered each time.
-    static func forUpdate(existing: AppConfig) -> OptionSeed {
+    /// Seed for interactive `update`, taken from the app's persisted config. The icon isn't
+    /// persisted, so its seed is nil ("keep existing"). Signing isn't persisted either, but
+    /// it is readable from the bundle's own signature — the caller passes what it found, so
+    /// the prompts default to re-signing with the same identity rather than to ad-hoc
+    /// (#117). The notary profile can't be recovered, so it's always re-entered.
+    static func forUpdate(existing: AppConfig, signIdentity: String? = nil,
+                          notarize: Bool = false) -> OptionSeed {
         OptionSeed(
             width: existing.width, height: existing.height, toolbar: existing.showToolbar,
             toolbarStyle: existing.toolbarStyle,
@@ -77,7 +80,22 @@ enum OptionDefaults {
             reader: existing.reader,
             iconPath: nil, backgroundColor: existing.backgroundColor,
             userAgent: existing.userAgent,
-            noSign: false, signIdentity: nil, notarize: false, notaryProfile: nil)
+            noSign: false, signIdentity: signIdentity, notarize: notarize, notaryProfile: nil)
+    }
+
+    /// What a flag-driven `update` signs the rebuilt bundle with, and whether that came
+    /// from the existing app rather than the command line.
+    ///
+    /// Explicit flags win: `--sign` sets the identity, `--no-sign` skips signing. With
+    /// neither, a Developer ID signature found on the existing bundle is carried over, so
+    /// a routine `update --width 1400` can't silently return a distributed app ad-hoc
+    /// signed (#117). Pure — the caller reads the identity off the bundle.
+    static func resolveUpdateSigning(noSign: Bool, sign: String?, existingIdentity: String?)
+        -> (signIdentity: String?, carriedOver: Bool) {
+        if noSign { return (nil, false) }
+        if let sign { return (sign, false) }
+        guard let existingIdentity else { return (nil, false) }
+        return (existingIdentity, true)
     }
 
     /// Resolves what background color a flag-driven `update` should apply, as the

@@ -107,7 +107,10 @@ struct Update: ParsableCommand {
     var force: Bool = false
 
     func run() throws {
-        try Create.validateSigning(noSign: noSign, sign: sign, notarize: notarize, notaryProfile: notaryProfile)
+        // `--notarize` may rely on an identity carried over from the existing bundle, which
+        // isn't known until it's been read; the resolved combination is validated below.
+        try Create.validateSigning(noSign: noSign, sign: sign, notarize: notarize,
+                                   notaryProfile: notaryProfile, identityMayBeInferred: true)
         try Create.validateExclusive(value: backgroundColor, clear: noBackgroundColor,
                                      flag: "background-color")
         try Create.validateExclusive(value: userAgent, clear: noUserAgent, flag: "user-agent")
@@ -123,6 +126,10 @@ struct Update: ParsableCommand {
         guard let existing = AppConfig.read(fromBundle: appPath) else {
             throw ValidationError("\(appPath) is not a webwrap app (no WebWrapURL in its Info.plist).")
         }
+        // Signing isn't baked into the Info.plist like the rest of the config, so it's read
+        // off the bundle's own signature — otherwise the rebuild below would re-sign a
+        // distributed app ad-hoc every time (#117).
+        let existingSigning = BundleSigning.read(bundlePath: appPath)
 
         if let url { try Create.validate(url: url) }
         if let name { try Create.validate(name: name) }
@@ -148,6 +155,9 @@ struct Update: ParsableCommand {
         var buildSign = sign
         var buildNotarize = notarize
         var buildNotaryProfile = notaryProfile
+        // Whether the identity below came from the existing bundle rather than a flag,
+        // so the change summary can say so.
+        var signingCarriedOver = false
 
         if mode == .interactive {
             Prompt.intro("Updating \(existing.name) — current settings shown as defaults.")
@@ -173,7 +183,9 @@ struct Update: ParsableCommand {
             try Create.validate(name: resolvedName)
             // If the URL changed, default the background prompt to the new site's manifest
             // color so re-resolution is the interactive default too (still editable).
-            var updateSeed = OptionDefaults.forUpdate(existing: existing)
+            var updateSeed = OptionDefaults.forUpdate(existing: existing,
+                                                      signIdentity: existingSigning.identity,
+                                                      notarize: existingSigning.isStapled)
             if resolvedURL != existing.url {
                 updateSeed.backgroundColor = Self.resolveManifestBackground(forURL: resolvedURL)
             }
@@ -221,6 +233,11 @@ struct Update: ParsableCommand {
                                            explicit: userAgent, clear: noUserAgent),
                                        handleURLs: effectiveHandleURLs, openAnyURL: openAnyUrl,
                                        externalLinks: externalLinks, reader: reader)
+
+            let signing = OptionDefaults.resolveUpdateSigning(
+                noSign: noSign, sign: sign, existingIdentity: existingSigning.identity)
+            buildSign = signing.signIdentity
+            signingCarriedOver = signing.carriedOver
         }
 
         try Create.validateSigning(noSign: buildNoSign, sign: buildSign,
@@ -264,8 +281,26 @@ struct Update: ParsableCommand {
             changes.append("User agent → \(merged.userAgent ?? "safari (default)")")
         }
         if let iconOverride { changes.append("Icon → \(iconOverride)") }
+        // Always listed, never conditional on a difference: the bundle is rebuilt and
+        // re-signed every time, so this is the one line that says what the app will be
+        // signed with when it comes back (#117).
+        changes.append("Signing → " + Create.signingDescription(
+            noSign: buildNoSign, sign: buildSign, notarize: buildNotarize)
+            + (signingCarriedOver ? " (carried over from the existing app)" : ""))
         print("Updating \(existing.name) at \(appPath):")
         for c in changes { print("  • \(c)") }
+
+        // The notary profile isn't recoverable from the bundle, so a stapled app can only
+        // be re-notarized by asking for it again; say so rather than quietly unstapling.
+        if existingSigning.isStapled && !buildNotarize {
+            FileHandle.standardError.write(Data("""
+
+                Warning: this app has a stapled notarization ticket, and the rebuild \
+                cannot keep it. Pass --notarize --notary-profile <name> to notarize the \
+                updated app, or recipients will see Gatekeeper warnings.
+
+                """.utf8))
+        }
 
         if !force {
             guard Prompt.isInteractive else {
@@ -685,11 +720,17 @@ struct Create: ParsableCommand {
     }
 
     /// Validates the signing/notarization flag combination. Pure — no I/O.
-    static func validateSigning(noSign: Bool, sign: String?, notarize: Bool, notaryProfile: String?) throws {
+    ///
+    /// `identityMayBeInferred` relaxes the "notarize needs an identity" rule for `update`'s
+    /// first pass, where the identity may still be carried over from the existing bundle;
+    /// the same rule is enforced on the resolved values once that's known.
+    static func validateSigning(noSign: Bool, sign: String?, notarize: Bool,
+                                notaryProfile: String?,
+                                identityMayBeInferred: Bool = false) throws {
         if noSign && sign != nil {
             throw ValidationError("`--no-sign` and `--sign` are mutually exclusive.")
         }
-        if notarize && sign == nil {
+        if notarize && sign == nil && !identityMayBeInferred {
             throw ValidationError("`--notarize` requires `--sign` (a Developer ID identity).")
         }
         if notarize && (notaryProfile?.isEmpty ?? true) {
