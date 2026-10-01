@@ -16,7 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `update` no longer replaces a Developer ID signature with an ad-hoc one: the identity is
   read from the app's own signature and reused unless `--sign` or `--no-sign` says
   otherwise, the change summary now always says what the app will be signed with, and a
-  stapled notarization ticket that the rebuild can't keep is called out. (#117)
+  stapled notarization ticket that the rebuild can't keep is called out. On a Mac without
+  that identity the update is ad-hoc signed with a warning rather than failing partway
+  through and leaving no app. (#117)
 - A setting changed in the app's Settings window no longer shadows a later `update` of the
   same setting: `update` drops the in-app override for each setting it explicitly sets (and
   says which), leaving the ones it didn't mention alone. (#118)

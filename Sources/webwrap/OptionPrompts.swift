@@ -89,12 +89,16 @@ enum OptionDefaults {
     /// Explicit flags win: `--sign` sets the identity, `--no-sign` skips signing. With
     /// neither, a Developer ID signature found on the existing bundle is carried over, so
     /// a routine `update --width 1400` can't silently return a distributed app ad-hoc
-    /// signed (#117). Pure — the caller reads the identity off the bundle.
-    static func resolveUpdateSigning(noSign: Bool, sign: String?, existingIdentity: String?)
+    /// signed (#117). The carry-over is declined when `isAvailable` says the identity
+    /// isn't in this user's keychain — signing with it would fail mid-rebuild, and an
+    /// ad-hoc app is better than no app. Pure — the caller reads the identity off the
+    /// bundle and supplies the keychain probe.
+    static func resolveUpdateSigning(noSign: Bool, sign: String?, existingIdentity: String?,
+                                     isAvailable: (String) -> Bool)
         -> (signIdentity: String?, carriedOver: Bool) {
         if noSign { return (nil, false) }
         if let sign { return (sign, false) }
-        guard let existingIdentity else { return (nil, false) }
+        guard let existingIdentity, isAvailable(existingIdentity) else { return (nil, false) }
         return (existingIdentity, true)
     }
 

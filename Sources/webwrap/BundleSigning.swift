@@ -51,6 +51,32 @@ enum BundleSigning {
 
     private static let authorityPrefix = "Authority="
 
+    /// Whether this Mac can actually sign with `identity` — the certificate *and* its
+    /// private key have to be in the running user's keychain. An identity read off a
+    /// bundle says who signed it, not that we can re-sign it: on a second Mac, or on a
+    /// recipient's, `codesign --sign` would fail after `build()` has already removed the
+    /// old bundle, leaving no app at all. A probe that can't run reads as "not
+    /// available", so the update falls back to ad-hoc rather than failing (#117).
+    static func isAvailableForSigning(_ identity: String) -> Bool {
+        let (status, output) = capture("/usr/bin/security",
+                                       ["find-identity", "-v", "-p", "codesigning"])
+        guard status == 0 else { return false }
+        return codesigningIdentities(inSecurityOutput: output).contains(identity)
+    }
+
+    /// The identity names in `security find-identity -v -p codesigning` output.
+    ///
+    /// Each usable identity is one line — `  1) A1B2… "Developer ID Application: X (TEAM)"`
+    /// — and the trailing `1 valid identities found` summary has no quotes, so quoting is
+    /// what separates them. Pure.
+    static func codesigningIdentities(inSecurityOutput output: String) -> [String] {
+        output.split(whereSeparator: \.isNewline).compactMap { line in
+            guard let open = line.firstIndex(of: "\""),
+                  let close = line.lastIndex(of: "\""), open < close else { return nil }
+            return String(line[line.index(after: open)..<close])
+        }
+    }
+
     /// Runs a tool and returns its exit status with stdout and stderr merged. Never
     /// throws: a tool that can't be launched reports a non-zero status like one that
     /// failed, and every caller treats both the same way.

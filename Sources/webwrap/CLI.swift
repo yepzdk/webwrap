@@ -184,11 +184,19 @@ struct Update: ParsableCommand {
                 throw CleanExit.message("Aborted — no changes made.")
             }
             try Create.validate(name: resolvedName)
+            // Seeded through the same resolver as the flag path, so the signing prompt
+            // never defaults to an identity this Mac can't sign with (#117).
+            let seedSigning = OptionDefaults.resolveUpdateSigning(
+                noSign: false, sign: nil, existingIdentity: existingSigning.identity,
+                isAvailable: BundleSigning.isAvailableForSigning)
+            if let identity = existingSigning.identity, seedSigning.signIdentity == nil {
+                Self.warnIdentityUnavailable(identity)
+            }
+            var updateSeed = OptionDefaults.forUpdate(existing: existing,
+                                                      signIdentity: seedSigning.signIdentity,
+                                                      notarize: existingSigning.isStapled)
             // If the URL changed, default the background prompt to the new site's manifest
             // color so re-resolution is the interactive default too (still editable).
-            var updateSeed = OptionDefaults.forUpdate(existing: existing,
-                                                      signIdentity: existingSigning.identity,
-                                                      notarize: existingSigning.isStapled)
             if resolvedURL != existing.url {
                 updateSeed.backgroundColor = Self.resolveManifestBackground(forURL: resolvedURL)
             }
@@ -241,9 +249,16 @@ struct Update: ParsableCommand {
                                        externalLinks: externalLinks, reader: reader)
 
             let signing = OptionDefaults.resolveUpdateSigning(
-                noSign: noSign, sign: sign, existingIdentity: existingSigning.identity)
+                noSign: noSign, sign: sign, existingIdentity: existingSigning.identity,
+                isAvailable: BundleSigning.isAvailableForSigning)
             buildSign = signing.signIdentity
             signingCarriedOver = signing.carriedOver
+            // Without --no-sign/--sign, a present identity can only resolve to nil by
+            // failing the keychain probe — the app comes back ad-hoc, so say why.
+            if !noSign, sign == nil, let identity = existingSigning.identity,
+               signing.signIdentity == nil {
+                Self.warnIdentityUnavailable(identity)
+            }
 
             settingsToReset = OptionDefaults.settingsToReset(
                 toolbar: toolbar, toolbarStyle: toolbarStyleFlag, progressBar: progressBar,
@@ -402,6 +417,19 @@ struct Update: ParsableCommand {
     /// the URL can't be resolved). Used to make the background follow a changed `--url`.
     private static func resolveManifestBackground(forURL url: String) -> String? {
         IconResolver(urlString: url)?.resolveWithMetadata().metadata.launchBackgroundColor
+    }
+
+    /// Says that the app's own Developer ID identity can't be re-used here, because
+    /// signing silently dropping to ad-hoc is the kind of thing you want to hear about
+    /// before you hand the app on (#117).
+    private static func warnIdentityUnavailable(_ identity: String) {
+        FileHandle.standardError.write(Data("""
+
+            Warning: this app is signed with "\(identity)", which isn't available for \
+            signing on this Mac, so the update will be ad-hoc signed instead. Install \
+            that identity (certificate and private key) to keep the signature.
+
+            """.utf8))
     }
 }
 
