@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- Incoming links are no longer rewritten by a `?url=`/`?u=`/`?q=` parameter that only
+  looked like a redirect: query unwrapping now happens on known redirector hosts only,
+  and a link whose cleaned form falls outside the app's site opens as it arrived
+  instead of being dropped. (#119)
+
 ## [0.9.1] - 2026-09-10
 
 ### Changed

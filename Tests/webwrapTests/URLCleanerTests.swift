@@ -64,6 +64,68 @@ final class URLCleanerTests: XCTestCase {
         XCTAssertEqual(clean(search), search)
     }
 
+    func testUnwrapsLinkedInRedirectorOnly() {
+        XCTAssertEqual(clean("https://lnkd.in/x?url=https://example.com/post"),
+                       "https://example.com/post")
+        XCTAssertEqual(
+            clean("https://www.linkedin.com/redir/redirect?url=https://example.com/post"),
+            "https://example.com/post")
+        // Any other LinkedIn page is an ordinary site, not a redirector.
+        let feed = "https://www.linkedin.com/feed/?url=https://example.com/post"
+        XCTAssertEqual(clean(feed), feed)
+    }
+
+    // MARK: - Query unwrapping is limited to redirector hosts (#119)
+
+    func testRedirectParamOnOrdinaryHostIsLeftAlone() {
+        // A document viewer's own ?url= parameter: unwrapping it would skip the
+        // viewer page, and under same-site scoping drop the link entirely.
+        let viewer = "https://example.com/viewer?url=https://cdn.example.net/report.pdf"
+        XCTAssertEqual(clean(viewer), viewer)
+        let proxy = "https://images.example.com/resize?u=https://cdn.example.net/a.jpg"
+        XCTAssertEqual(clean(proxy), proxy)
+        let oembed = "https://example.com/oembed?link=https://example.com/watch/1"
+        XCTAssertEqual(clean(oembed), oembed)
+    }
+
+    func testEncodedRedirectParamOnOrdinaryHostIsLeftAlone() {
+        // The same parameter percent-encoded must not be unwrapped by the
+        // path-embed rule either — the embed is in the query, not the path. The
+        // query's encoding is normalized on the way through, so this checks where
+        // the URL points rather than its exact spelling.
+        let viewer = URL(string:
+            "https://example.com/viewer?url=https%3A%2F%2Fcdn.example.net%2Freport.pdf")!
+        let cleaned = URLCleaner.clean(viewer)
+        XCTAssertEqual(cleaned.host, "example.com")
+        XCTAssertEqual(cleaned.path, "/viewer")
+        XCTAssertEqual(URLComponents(url: cleaned, resolvingAgainstBaseURL: false)?
+            .queryItems?.first { $0.name == "url" }?.value,
+                       "https://cdn.example.net/report.pdf")
+    }
+
+    func testSearchForAURLStaysOnTheResultsPage() {
+        // `q` is a search parameter everywhere except google.*/url.
+        let search = "https://example.com/search?q=https://example.com/article"
+        XCTAssertEqual(clean(search), search)
+        let googleSearch = "https://www.google.com/search?q=https://example.com/article"
+        XCTAssertEqual(clean(googleSearch), googleSearch)
+    }
+
+    func testGoogleCountryDomainRedirectUnwrapped() {
+        XCTAssertEqual(clean("https://www.google.co.uk/url?q=https://example.com/a"),
+                       "https://example.com/a")
+        // Not every google.* host is the redirector — only the /url endpoint.
+        let translate = "https://translate.google.com/?u=https://example.com/a"
+        XCTAssertEqual(clean(translate), translate)
+    }
+
+    func testLookalikeRedirectorHostIsNotTrusted() {
+        let fake = "https://l.facebook.com.evil.test/l.php?u=https://example.com/post"
+        XCTAssertEqual(clean(fake), fake)
+        let fakeGoogle = "https://google.com.evil.test/url?q=https://example.com/a"
+        XCTAssertEqual(clean(fakeGoogle), fakeGoogle)
+    }
+
     // MARK: - Postmark
 
     func testUnwrapsPostmark() {

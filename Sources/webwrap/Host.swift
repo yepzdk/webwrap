@@ -1170,19 +1170,20 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     /// for `applicationDidFinishLaunching` to load. Returns whether it was accepted.
     @discardableResult
     private func openIncoming(_ url: URL) -> Bool {
-        // Unwrap tracking redirects / strip tracking params first, so the app goes
-        // straight to the destination (the tracking host may be blocked, e.g. by a
-        // Pi-hole) — and so a tracking link wrapping a same-site URL passes the
-        // domain scoping below.
-        let url = URLCleaner.clean(url)
-        guard acceptableIncoming(url) else { return false }
+        // Tracking redirects are unwrapped / tracking params stripped first, so the
+        // app goes straight to the destination (the tracking host may be blocked,
+        // e.g. by a Pi-hole) — and so a tracking link wrapping a same-site URL
+        // passes the domain scoping. `incomingTarget` decides which form survives.
+        guard let target = HostNavigation.incomingTarget(url, appHost: appHost,
+                                                         allowAnyDomain: allowAnyDomain)
+        else { return false }
         if webView == nil {
-            pendingIncomingURL = url
+            pendingIncomingURL = target
         } else {
             isShowingFallback = false
             isShowingStartPage = false
             failedURL = nil
-            webView.load(URLRequest(url: url))
+            webView.load(URLRequest(url: target))
             NSApp.activate(ignoringOtherApps: true)
         }
         return true
@@ -1190,9 +1191,7 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
 
     /// Whether an incoming URL is a web URL we should load given the app's domain scope.
     private func acceptableIncoming(_ url: URL) -> Bool {
-        HostNavigation.isWebURL(url)
-            && HostNavigation.shouldOpen(incomingHost: url.host, appHost: appHost,
-                                         allowAnyDomain: allowAnyDomain)
+        HostNavigation.accepts(url, appHost: appHost, allowAnyDomain: allowAnyDomain)
     }
 
     // MARK: - Navigation policy (external links)
@@ -1550,6 +1549,26 @@ enum HostNavigation {
         guard let incomingHost = incomingHost?.lowercased(), !incomingHost.isEmpty else { return false }
         if allowAnyDomain { return true }
         return isSameSite(host: incomingHost, appHost: appHost)
+    }
+
+    /// Whether an incoming URL is a web URL this app should load, given its domain scope.
+    static func accepts(_ url: URL, appHost: String?, allowAnyDomain: Bool) -> Bool {
+        isWebURL(url) && shouldOpen(incomingHost: url.host, appHost: appHost,
+                                    allowAnyDomain: allowAnyDomain)
+    }
+
+    /// Which form of an incoming URL to load: the cleaned one when the app accepts it,
+    /// else the URL as it arrived, else nothing.
+    ///
+    /// Cleaning is an optimization and must never cost a link. Unwrapping a parameter
+    /// that only looked like a redirect would otherwise move the URL off the app's site
+    /// and the same-site check would drop it — the app would just sit there while the
+    /// user watched their browser picker hand the link over (#119).
+    static func incomingTarget(_ url: URL, appHost: String?, allowAnyDomain: Bool) -> URL? {
+        let cleaned = URLCleaner.clean(url)
+        if accepts(cleaned, appHost: appHost, allowAnyDomain: allowAnyDomain) { return cleaned }
+        if accepts(url, appHost: appHost, allowAnyDomain: allowAnyDomain) { return url }
+        return nil
     }
 
     /// Whether `host` belongs to the app's own site: an exact match of `appHost` or a

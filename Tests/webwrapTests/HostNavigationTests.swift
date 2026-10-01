@@ -66,6 +66,42 @@ final class ShouldOpenIncomingURLTests: XCTestCase {
     }
 }
 
+/// Which form of an incoming URL gets loaded once cleaning has had its say (#119).
+final class IncomingTargetTests: XCTestCase {
+    private func target(_ url: String, appHost: String? = "example.com",
+                        allowAnyDomain: Bool = false) -> String? {
+        HostNavigation.incomingTarget(URL(string: url)!, appHost: appHost,
+                                      allowAnyDomain: allowAnyDomain)?.absoluteString
+    }
+
+    func testCleanedURLIsLoadedWhenAcceptable() {
+        XCTAssertEqual(target("https://example.com/a?utm_source=mail"),
+                       "https://example.com/a")
+    }
+
+    func testTrackingWrapperUnwrapsToSameSite() {
+        XCTAssertEqual(target("https://l.facebook.com/l.php?u=https://example.com/post"),
+                       "https://example.com/post")
+    }
+
+    func testFallsBackToTheOriginalWhenCleaningLeavesTheSite() {
+        // A same-site page carrying an off-site URL in a parameter: whatever the
+        // cleaner makes of it, the link we were handed must still open.
+        XCTAssertEqual(target("https://example.com/viewer?u=https://cdn.other.test/a.pdf"),
+                       "https://example.com/viewer?u=https://cdn.other.test/a.pdf")
+    }
+
+    func testRejectsWhenNeitherFormIsAcceptable() {
+        XCTAssertNil(target("https://other.test/page"))
+        XCTAssertNil(target("mailto:someone@example.com"))
+    }
+
+    func testOffDomainAcceptedWithOpenAnyURL() {
+        XCTAssertEqual(target("https://other.test/page?utm_source=x", allowAnyDomain: true),
+                       "https://other.test/page")
+    }
+}
+
 final class NavigationPolicyTests: XCTestCase {
     /// Shorthand: policy for a wrapped outlook.office.com app without --open-any-url.
     private func policy(_ url: String, isMainFrame: Bool = true, isLinkClick: Bool = false,
