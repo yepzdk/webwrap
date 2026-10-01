@@ -102,6 +102,44 @@ final class OptionDefaultsForUpdateTests: XCTestCase {
     }
 }
 
+/// Which in-app Settings overrides a flag-driven `update` drops (#118).
+final class SettingsToResetTests: XCTestCase {
+    private func reset(toolbar: Bool? = nil, toolbarStyle: ToolbarStyle? = nil,
+                       progressBar: Bool? = nil,
+                       backgroundColor: String? = nil, clearBackgroundColor: Bool = false,
+                       userAgent: String? = nil, clearUserAgent: Bool = false)
+        -> [HostSettings.Setting] {
+        OptionDefaults.settingsToReset(
+            toolbar: toolbar, toolbarStyle: toolbarStyle, progressBar: progressBar,
+            backgroundColor: backgroundColor, clearBackgroundColor: clearBackgroundColor,
+            userAgent: userAgent, clearUserAgent: clearUserAgent)
+    }
+
+    func testAnUpdateThatSetsNothingResetsNothing() {
+        // `update --width 1400` must not throw away in-app choices it never mentioned.
+        XCTAssertEqual(reset(), [])
+    }
+
+    func testEachFlagResetsOnlyItsOwnSetting() {
+        XCTAssertEqual(reset(toolbar: true), [.toolbar])
+        // Explicitly turning a setting off counts too — `false` is still a value.
+        XCTAssertEqual(reset(progressBar: false), [.progressBar])
+        XCTAssertEqual(reset(toolbarStyle: .compact), [.toolbarStyle])
+        XCTAssertEqual(reset(backgroundColor: "#1a73e8"), [.backgroundColor])
+        XCTAssertEqual(reset(userAgent: "chrome"), [.userAgent])
+    }
+
+    func testClearingFlagsCountAsSettingTheValue() {
+        XCTAssertEqual(reset(clearBackgroundColor: true), [.backgroundColor])
+        XCTAssertEqual(reset(clearUserAgent: true), [.userAgent])
+    }
+
+    func testSeveralFlagsAtOnce() {
+        XCTAssertEqual(reset(toolbar: true, toolbarStyle: .compact, userAgent: "edge"),
+                       [.toolbar, .toolbarStyle, .userAgent])
+    }
+}
+
 final class ResolveUpdateBackgroundTests: XCTestCase {
     // The result is a String??: nil = carry over, .some(nil) = clear, .some(x) = set.
 

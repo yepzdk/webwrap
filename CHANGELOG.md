@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   read from the app's own signature and reused unless `--sign` or `--no-sign` says
   otherwise, the change summary now always says what the app will be signed with, and a
   stapled notarization ticket that the rebuild can't keep is called out. (#117)
+- A setting changed in the app's Settings window no longer shadows a later `update` of the
+  same setting: `update` drops the in-app override for each setting it explicitly sets (and
+  says which), leaving the ones it didn't mention alone. (#118)
 
 ## [0.9.1] - 2026-09-10
 

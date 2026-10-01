@@ -192,6 +192,48 @@ final class HostSettingsTests: XCTestCase {
         XCTAssertEqual(HostSettings.readerHistoryJSON(store: store), stored)
     }
 
+    // MARK: - Per-setting override clearing (what `update` uses, #118)
+
+    func testClearOverrideRestoresTheBakedDefaultForThatSettingOnly() {
+        let store = MemoryStore()
+        HostSettings.setToolbar(false, store: store)
+        HostSettings.setProgressBar(false, store: store)
+
+        HostSettings.clearOverride(.toolbar, store: store)
+
+        XCTAssertTrue(HostSettings.toolbar(store: store, bakedDefault: true))
+        // The setting the update didn't mention keeps the user's in-app choice.
+        XCTAssertFalse(HostSettings.progressBar(store: store, bakedDefault: true))
+    }
+
+    func testClearOverrideHandlesTheTriStateSettings() {
+        let store = MemoryStore()
+        // An explicitly cleared color is the worst case: the marker alone shadows a
+        // newly baked color until both keys go.
+        HostSettings.setBackgroundColor(nil, store: store)
+        HostSettings.setUserAgent(nil, store: store)
+        XCTAssertNil(HostSettings.backgroundColor(store: store, bakedDefault: "#1a73e8"))
+
+        HostSettings.clearOverride(.backgroundColor, store: store)
+        HostSettings.clearOverride(.userAgent, store: store)
+
+        XCTAssertEqual(HostSettings.backgroundColor(store: store, bakedDefault: "#1a73e8"),
+                       "#1a73e8")
+        XCTAssertEqual(HostSettings.userAgent(store: store, bakedDefault: "edge"), "edge")
+    }
+
+    func testHasOverrideReportsWhatTheSettingsWindowTouched() {
+        let store = MemoryStore()
+        for setting in HostSettings.Setting.allCases {
+            XCTAssertFalse(HostSettings.hasOverride(setting, store: store), "\(setting)")
+        }
+        HostSettings.setToolbarStyle(.compact, store: store)
+        HostSettings.setBackgroundColor(nil, store: store)
+        XCTAssertTrue(HostSettings.hasOverride(.toolbarStyle, store: store))
+        XCTAssertTrue(HostSettings.hasOverride(.backgroundColor, store: store))
+        XCTAssertFalse(HostSettings.hasOverride(.toolbar, store: store))
+    }
+
     // MARK: - Reader history
 
     func testReaderHistoryJSONRoundTrips() {

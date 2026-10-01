@@ -123,6 +123,25 @@ enum OptionDefaults {
         return nil
     }
 
+    /// The presentation settings a flag-driven `update` explicitly set, and whose in-app
+    /// Settings override therefore has to go: an explicit `--toolbar` should beat a stale
+    /// in-app toggle, which would otherwise shadow the freshly baked default and make the
+    /// update look like it did nothing (#118). Settings the command line didn't mention
+    /// keep whatever the user chose in the app. Pure.
+    static func settingsToReset(toolbar: Bool?, toolbarStyle: ToolbarStyle?,
+                                progressBar: Bool?,
+                                backgroundColor: String?, clearBackgroundColor: Bool,
+                                userAgent: String?, clearUserAgent: Bool)
+        -> [HostSettings.Setting] {
+        var settings: [HostSettings.Setting] = []
+        if toolbar != nil { settings.append(.toolbar) }
+        if toolbarStyle != nil { settings.append(.toolbarStyle) }
+        if progressBar != nil { settings.append(.progressBar) }
+        if backgroundColor != nil || clearBackgroundColor { settings.append(.backgroundColor) }
+        if userAgent != nil || clearUserAgent { settings.append(.userAgent) }
+        return settings
+    }
+
     /// `--open-any-url` only means anything when URL handling is on, so off-domain access is
     /// allowed only when both are true. Generalizes the `effectiveHandleURLs` implication.
     static func resolveOpenAnyURL(handleURLs: Bool, openAnyURL: Bool) -> Bool {

@@ -158,6 +158,9 @@ struct Update: ParsableCommand {
         // Whether the identity below came from the existing bundle rather than a flag,
         // so the change summary can say so.
         var signingCarriedOver = false
+        // The settings this update is explicitly setting, whose in-app Settings override
+        // has to be dropped for the newly baked default to take effect (#118).
+        var settingsToReset: [HostSettings.Setting] = []
 
         if mode == .interactive {
             Prompt.intro("Updating \(existing.name) — current settings shown as defaults.")
@@ -209,6 +212,9 @@ struct Update: ParsableCommand {
             buildSign = seed.signIdentity
             buildNotarize = seed.notarize
             buildNotaryProfile = seed.notaryProfile
+            // Every presentation setting was just confirmed at a prompt, so all of them
+            // count as explicitly set.
+            settingsToReset = HostSettings.Setting.allCases
         } else {
             // --open-any-url implies URL handling, so turning it on also turns handling on
             // (otherwise the setting would be inert). Only forces it when the user is
@@ -238,6 +244,11 @@ struct Update: ParsableCommand {
                 noSign: noSign, sign: sign, existingIdentity: existingSigning.identity)
             buildSign = signing.signIdentity
             signingCarriedOver = signing.carriedOver
+
+            settingsToReset = OptionDefaults.settingsToReset(
+                toolbar: toolbar, toolbarStyle: toolbarStyleFlag, progressBar: progressBar,
+                backgroundColor: backgroundColor, clearBackgroundColor: noBackgroundColor,
+                userAgent: userAgent, clearUserAgent: noUserAgent)
         }
 
         try Create.validateSigning(noSign: buildNoSign, sign: buildSign,
@@ -361,6 +372,30 @@ struct Update: ParsableCommand {
             try? fm.removeItem(atPath: appPath)
         }
         print("✓ Updated \(newPath)")
+        for label in Self.clearOverrides(for: settingsToReset, bundleId: existing.bundleId) {
+            print("  • Dropped the in-app Settings override for \(label), so the new value applies")
+        }
+    }
+
+    /// Removes the in-app Settings overrides for `settings`, returning the labels of the
+    /// ones that were actually set.
+    ///
+    /// The overrides live in the app's own `UserDefaults` domain, which is its bundle
+    /// identifier — kept stable across an update so the login session survives, which is
+    /// also why the overrides survive. `update` runs as the CLI rather than as the app,
+    /// hence addressing that domain by name. Done after a successful build, so a failed
+    /// update leaves the app's settings exactly as they were.
+    private static func clearOverrides(for settings: [HostSettings.Setting],
+                                       bundleId: String) -> [String] {
+        guard !settings.isEmpty, !bundleId.isEmpty,
+              let defaults = UserDefaults(suiteName: bundleId) else { return [] }
+        let store = HostDefaultsStore(defaults: defaults)
+        var cleared: [String] = []
+        for setting in settings where HostSettings.hasOverride(setting, store: store) {
+            HostSettings.clearOverride(setting, store: store)
+            cleared.append(setting.label)
+        }
+        return cleared
     }
 
     /// Re-resolves a site's manifest launch background color (nil if the site has none or
