@@ -7,7 +7,12 @@ import CryptoKit
 // and presents a single WKWebView window. Cookies/sessions are persisted to a
 // per-app data store so each wrapped app stays logged in independently.
 
-private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate, NSToolbarDelegate, WKScriptMessageHandler {
+// `NSMenuItemValidation` is load-bearing, not decoration: AppKit asks the item's target
+// `respondsToSelector:@selector(validateMenuItem:)`, and a plain Swift method on an
+// NSObject subclass isn't visible to the Objective-C runtime. Declaring the protocol
+// makes `validateMenuItem(_:)` an @objc requirement, so it actually gets called (#116).
+// Not `private`: the tests assert that exposure.
+final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate, NSToolbarDelegate, WKScriptMessageHandler, NSMenuItemValidation {
     var window: NSWindow!
     var webView: WKWebView!
 
@@ -655,6 +660,7 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     // Enable/disable our self-targeted menu items to match what's actually possible:
     // Copy Current URL needs a loaded page; Back/Forward need history (consistent with
     // the toolbar buttons). Items targeting other responders fall through to `true`.
+    // Satisfies `NSMenuItemValidation` — see the conformance note on the class.
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
         case #selector(copyCurrentURL(_:)):

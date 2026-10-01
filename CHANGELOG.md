@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - A setting changed in the app's Settings window no longer shadows a later `update` of the
   same setting: `update` drops the in-app override for each setting it explicitly sets (and
   says which), leaving the ones it didn't mention alone. (#118)
+- Menu items are validated again: Back, Forward, Copy Current URL, Toggle Reader View and
+  Open URL from Clipboard are greyed out when they'd do nothing, instead of being
+  permanently enabled and failing silently when used. (#116)
 
 ## [0.9.1] - 2026-09-10
 
