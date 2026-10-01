@@ -50,7 +50,7 @@ webwrap create --url https://outlook.office.com --name "Outlook"
 
 This writes `Outlook.app` to `/Applications`, resolving the best available icon for the site automatically — it checks the web app manifest, `apple-touch-icon`, `<link rel="icon">`, the page's `og:image`/`twitter:image` (used only when it's close enough to square that squashing it wouldn't distort), and `/favicon.ico`, in that order, falling back to a favicon service.
 
-If every source comes up empty — an unreachable site, a site with no icon anywhere, or a handler-only app with no site at all — the app gets a **generated** icon rather than the generic macOS placeholder: a solid square in the app's background color with the app's initial as a monogram, in black or white for contrast.
+If every source comes up empty — an unreachable site, a site with no icon anywhere, or a handler-only app with no site at all — the app gets a **generated** icon rather than the generic macOS placeholder: a solid square with the app's initial as a monogram, in black or white for contrast. The square takes the app's background color, or a neutral slate when there's none to take — which is the usual case for a handler-only app.
 
 From the same web app manifest, `webwrap` also picks up a couple of smart defaults: it suggests the app name from the manifest's `short_name`/`name` (in interactive mode), and paints the window with the manifest's `background_color` (or `theme_color`) so launch doesn't flash white before the page loads. Both are overridable, and reading the manifest costs no extra request — it's shared with icon resolution.
 
@@ -120,7 +120,7 @@ Passing both `--url` and `--name` skips the prompts entirely and builds straight
 | `--toolbar-size` | Navigation toolbar size: `regular` or `compact` (smaller) | `regular` |
 | `--progress-bar` | Show a thin page-load progress line at the top of the window | off |
 | `--handle-urls` | Register as an http/https handler and open URLs the app is launched with (e.g. from Choosy) | off |
-| `--open-any-url` | With `--handle-urls`, also accept off-domain URLs (default: only same-site) | off |
+| `--open-any-url` | Accept off-domain URLs, not just same-site ones (turns `--handle-urls` on by itself) | off |
 | `--external-links` / `--no-external-links` | Open links that leave the site in the default browser | on |
 | `--no-url` | Create a handler-only app: no home site, opens to a built-in start page, exists to receive links (implies `--handle-urls --open-any-url`) | — |
 | `--reader` | Open pages in the distraction-free reader view automatically (⇧⌘R toggles it on any page either way) | off |
@@ -151,7 +151,7 @@ With `--handle-urls`, a generated app registers as an `http`/`https` handler and
 webwrap create -u https://github.com -n "GitHub" --handle-urls
 ```
 
-It's **off by default** so apps don't claim `http`/`https` system-wide unless you opt in. By default only **same-site** URLs are accepted (a GitHub app loads `github.com` links and ignores `example.com`); pass `--open-any-url` to let the app navigate to any URL it's handed. Rejected off-domain URLs are simply ignored — the app stays on its current page. `--open-any-url` only means anything with URL handling on, so passing it alone turns `--handle-urls` on too (and says so).
+It's **off by default** so apps don't claim `http`/`https` system-wide unless you opt in. By default only **same-site** URLs are accepted (a GitHub app loads `github.com` links and ignores `example.com`); pass `--open-any-url` to let the app navigate to any URL it's handed. Rejected off-domain URLs are simply ignored — the app stays on its current page. `--open-any-url` only means anything with URL handling on, so passing it alone turns `--handle-urls` on too — `create` says so in a note, `update` does it silently.
 
 Incoming links are also **cleaned before navigating** (logic ported from [url-cleaner](https://github.com/yepzdk/url-cleaner)): tracking redirects that embed the real destination — newsletter wrappers like TLDR's, Google/Facebook/SafeLinks redirects, Postmark — are unwrapped so the app goes straight to the article without ever contacting the tracking host (which your DNS blocker may be blocking anyway), and tracking parameters (`utm_*`, `fbclid`, …) are stripped. Cleaning runs before the same-site check, so a tracking link wrapping a same-site URL is accepted.
 
@@ -245,7 +245,7 @@ Run with just the app path on a terminal and `update` walks the same prompts as 
 | `--reader` / `--no-reader` | Open pages in the reader view automatically, or only via ⇧⌘R (current setting kept if omitted) |
 | `--background-color` / `--no-background-color` | Set or clear the window background color. If omitted, it follows the new `--url`'s manifest color when the URL changes, otherwise the current setting is kept |
 | `--user-agent` / `--no-user-agent` | Set the browser identity (`safari`/`chrome`/`edge` or a custom UA string) or reset it to the Safari default (current setting kept if omitted) |
-| `--sign`, `--notarize`, `--notary-profile`, `--no-sign` | Signing, same as `create` |
+| `--sign`, `--notarize`, `--notary-profile`, `--no-sign` | Signing, same as `create` (**not** kept if omitted — the app comes back ad-hoc signed) |
 | `--force` | Skip the confirmation prompt |
 
 The session survives because it's keyed to the app's bundle identifier, which `update` keeps stable even across a URL or name change. `update` refuses any bundle that isn't a webwrap app.
