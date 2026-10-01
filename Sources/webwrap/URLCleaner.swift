@@ -127,16 +127,28 @@ enum URLCleaner {
     /// google.co.uk — rather than something that merely starts with "google.".
     /// The redirector exists on every country domain, so the suffix can't be
     /// enumerated; instead the labels after "google" have to look like a public
-    /// suffix (one or two labels of 2–3 characters), which rules out the
-    /// "google.com.evil.test" shape a bare prefix check would accept.
+    /// suffix, which rules out the "google.com.evil.test" shape a bare prefix
+    /// check would accept.
+    ///
+    /// A single label is any ccTLD/gTLD of 2–3 characters. Two labels have to be
+    /// one of the second-level registries Google uses under a ccTLD, because
+    /// `app.dev` and `ai.xyz` are ordinary registrations whose "google" subdomain
+    /// anyone can take.
     private static func isGoogleDomain(_ host: String) -> Bool {
         let bare = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
         let labels = bare.split(separator: ".")
         guard labels.first == "google" else { return false }
         let suffix = labels.dropFirst()
-        guard (1...2).contains(suffix.count) else { return false }
-        return suffix.allSatisfy { (2...3).contains($0.count) }
+        guard (1...2).contains(suffix.count),
+              let tld = suffix.last, (2...3).contains(tld.count) else { return false }
+        guard suffix.count == 2 else { return true }
+        return googleSecondLevels.contains(String(suffix.first!))
     }
+
+    /// The second-level labels Google registers under, e.g. google.co.uk,
+    /// google.com.au, google.com.br.
+    private static let googleSecondLevels: Set<String> =
+        ["co", "com", "net", "org", "ac", "gov", "edu"]
 
     /// A percent-encoded absolute URL embedded in the path, e.g. TLDR's
     /// `…/CL0/https:%2F%2Fwww.figma.com%2Fblog%2F…%3Futm_source=x/1/0100…`.

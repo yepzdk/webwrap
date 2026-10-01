@@ -124,6 +124,19 @@ final class URLCleanerTests: XCTestCase {
         XCTAssertEqual(clean(fake), fake)
         let fakeGoogle = "https://google.com.evil.test/url?q=https://example.com/a"
         XCTAssertEqual(clean(fakeGoogle), fakeGoogle)
+        // app.dev is an ordinary registration, so its "google" subdomain is
+        // anyone's — a two-label suffix has to be a registry Google uses.
+        let fakeSuffix = "https://google.app.dev/url?q=https://example.com/a"
+        XCTAssertEqual(clean(fakeSuffix), fakeSuffix)
+    }
+
+    func testGoogleCountryDomainsAreStillTrusted() {
+        XCTAssertEqual(clean("https://www.google.co.uk/url?q=https://example.com/a"),
+                       "https://example.com/a")
+        XCTAssertEqual(clean("https://www.google.com.au/url?q=https://example.com/a"),
+                       "https://example.com/a")
+        XCTAssertEqual(clean("https://www.google.dk/url?q=https://example.com/a"),
+                       "https://example.com/a")
     }
 
     // MARK: - Postmark
