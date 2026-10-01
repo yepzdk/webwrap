@@ -161,6 +161,23 @@ enum HostSettings {
         return store.string(forKey: Key.userAgent).flatMap { $0.isEmpty ? nil : $0 }
     }
 
+    /// The config as the app actually runs it: the baked plist values with every
+    /// overridable setting resolved through `store`.
+    ///
+    /// `update` uses this to seed its interactive prompts, so pressing Enter through them
+    /// keeps what the app is doing now instead of reviving a baked default the user had
+    /// already switched off in the Settings window. Only the five `Setting` cases differ
+    /// from the baked config — identity and build settings have no override.
+    static func effectiveConfig(_ baked: AppConfig, store: Store) -> AppConfig {
+        baked.applying(
+            showToolbar: toolbar(store: store, bakedDefault: baked.showToolbar),
+            toolbarStyle: toolbarStyle(store: store, bakedDefault: baked.toolbarStyle),
+            progressBar: progressBar(store: store, bakedDefault: baked.progressBar),
+            backgroundColor: .some(backgroundColor(store: store,
+                                                   bakedDefault: baked.backgroundColor)),
+            userAgent: .some(userAgent(store: store, bakedDefault: baked.userAgent)))
+    }
+
     // MARK: - Page zoom
 
     /// The supported page-zoom bounds and the step the menu actions move by.
@@ -255,6 +272,17 @@ final class HostDefaultsStore: HostSettings.Store {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+    }
+
+    /// The override store of a *generated app*, for code running outside it — `update`
+    /// reads and clears the overrides as the CLI, not as the app. An app's `UserDefaults`
+    /// domain is its bundle identifier, which `update` keeps stable. Nil when there's no
+    /// usable domain to address.
+    static func forApp(bundleId: String) -> HostDefaultsStore? {
+        guard !bundleId.isEmpty, let defaults = UserDefaults(suiteName: bundleId) else {
+            return nil
+        }
+        return HostDefaultsStore(defaults: defaults)
     }
 
     func bool(forKey key: String) -> Bool { defaults.bool(forKey: key) }

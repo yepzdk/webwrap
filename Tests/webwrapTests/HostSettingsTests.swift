@@ -234,6 +234,94 @@ final class HostSettingsTests: XCTestCase {
         XCTAssertFalse(HostSettings.hasOverride(.toolbar, store: store))
     }
 
+    // MARK: - Effective config (what interactive `update` seeds its prompts from)
+
+    /// A baked config with every overridable setting at a known value, so a test override
+    /// can differ from each of them.
+    private static let baked = AppConfig(
+        url: "https://example.test", name: "Example",
+        bundleId: "dk.yepz.webwrap.example", width: 1200, height: 800,
+        showToolbar: true, toolbarStyle: .regular,
+        progressBar: true, backgroundColor: "#123456", userAgent: "chrome",
+        handleURLs: false, openAnyURL: false, externalLinks: true, reader: false)
+
+    func testEffectiveConfigWithoutOverridesIsTheBakedConfig() {
+        XCTAssertEqual(HostSettings.effectiveConfig(Self.baked, store: MemoryStore()), Self.baked)
+    }
+
+    func testEffectiveConfigPrefersEachOverride() {
+        let store = MemoryStore()
+        HostSettings.setToolbar(false, store: store)
+        HostSettings.setToolbarStyle(.compact, store: store)
+        HostSettings.setProgressBar(false, store: store)
+        HostSettings.setBackgroundColor("#abcdef", store: store)
+        HostSettings.setUserAgent("edge", store: store)
+
+        let effective = HostSettings.effectiveConfig(Self.baked, store: store)
+        XCTAssertFalse(effective.showToolbar)
+        XCTAssertEqual(effective.toolbarStyle, .compact)
+        XCTAssertFalse(effective.progressBar)
+        XCTAssertEqual(effective.backgroundColor, "#abcdef")
+        XCTAssertEqual(effective.userAgent, "edge")
+    }
+
+    /// The tri-state overrides can be set to "none", which has to beat a baked value
+    /// rather than reading as "no override".
+    func testEffectiveConfigHonorsClearedTriStateOverrides() {
+        let store = MemoryStore()
+        HostSettings.setBackgroundColor(nil, store: store)
+        HostSettings.setUserAgent(nil, store: store)
+
+        let effective = HostSettings.effectiveConfig(Self.baked, store: store)
+        XCTAssertNil(effective.backgroundColor)
+        XCTAssertNil(effective.userAgent)
+    }
+
+    func testEffectiveConfigLeavesNonOverridableSettingsAlone() {
+        let store = MemoryStore()
+        HostSettings.setToolbar(false, store: store)
+
+        let effective = HostSettings.effectiveConfig(Self.baked, store: store)
+        XCTAssertEqual(effective.url, Self.baked.url)
+        XCTAssertEqual(effective.name, Self.baked.name)
+        XCTAssertEqual(effective.bundleId, Self.baked.bundleId)
+        XCTAssertEqual(effective.width, Self.baked.width)
+        XCTAssertEqual(effective.height, Self.baked.height)
+        XCTAssertEqual(effective.handleURLs, Self.baked.handleURLs)
+        XCTAssertEqual(effective.openAnyURL, Self.baked.openAnyURL)
+        XCTAssertEqual(effective.externalLinks, Self.baked.externalLinks)
+        XCTAssertEqual(effective.reader, Self.baked.reader)
+    }
+
+    /// The prompt seed is built from the effective config, so a toolbar switched off in
+    /// the app's Settings window defaults the prompt to off — Enter keeps it off (#118).
+    func testUpdateSeedStartsFromTheEffectiveValues() {
+        let store = MemoryStore()
+        HostSettings.setToolbar(false, store: store)
+        HostSettings.setProgressBar(false, store: store)
+
+        let seed = OptionDefaults.forUpdate(
+            existing: HostSettings.effectiveConfig(Self.baked, store: store))
+        XCTAssertFalse(seed.toolbar)
+        XCTAssertFalse(seed.progressBar)
+        XCTAssertEqual(OptionDefaults.forUpdate(existing: Self.baked).toolbar, true,
+                       "the baked config still seeds the toolbar on")
+    }
+
+    /// A changed `--url` re-resolves the new site's manifest color, and that still wins
+    /// over the background the user had set in the app.
+    func testChangedURLBackgroundBeatsTheBackgroundOverride() {
+        let store = MemoryStore()
+        HostSettings.setBackgroundColor("#abcdef", store: store)
+
+        var seed = OptionDefaults.forUpdate(
+            existing: HostSettings.effectiveConfig(Self.baked, store: store))
+        XCTAssertEqual(seed.backgroundColor, "#abcdef")
+        // What `Update.run` does when the entered URL differs from the existing one.
+        seed.backgroundColor = "#00ff00"
+        XCTAssertEqual(seed.backgroundColor, "#00ff00")
+    }
+
     // MARK: - Reader history
 
     func testReaderHistoryJSONRoundTrips() {

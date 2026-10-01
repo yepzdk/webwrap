@@ -192,7 +192,14 @@ struct Update: ParsableCommand {
             if let identity = existingSigning.identity, seedSigning.signIdentity == nil {
                 Self.warnIdentityUnavailable(identity)
             }
-            var updateSeed = OptionDefaults.forUpdate(existing: existing,
+            // The prompts start from what the app is actually doing: an in-app Settings
+            // override beats the baked plist default, so pressing Enter through them keeps
+            // the current look instead of reviving a setting the user switched off in the
+            // app. Only the prompts are seeded this way — the change summary below still
+            // compares against the baked config.
+            let effective = HostDefaultsStore.forApp(bundleId: existing.bundleId)
+                .map { HostSettings.effectiveConfig(existing, store: $0) } ?? existing
+            var updateSeed = OptionDefaults.forUpdate(existing: effective,
                                                       signIdentity: seedSigning.signIdentity,
                                                       notarize: existingSigning.isStapled)
             // If the URL changed, default the background prompt to the new site's manifest
@@ -396,16 +403,14 @@ struct Update: ParsableCommand {
     /// Removes the in-app Settings overrides for `settings`, returning the labels of the
     /// ones that were actually set.
     ///
-    /// The overrides live in the app's own `UserDefaults` domain, which is its bundle
-    /// identifier — kept stable across an update so the login session survives, which is
-    /// also why the overrides survive. `update` runs as the CLI rather than as the app,
-    /// hence addressing that domain by name. Done after a successful build, so a failed
-    /// update leaves the app's settings exactly as they were.
+    /// The overrides live in the app's own `UserDefaults` domain (see
+    /// `HostDefaultsStore.forApp(bundleId:)`, which the interactive seed reads through
+    /// too). Done after a successful build, so a failed update leaves the app's settings
+    /// exactly as they were.
     private static func clearOverrides(for settings: [HostSettings.Setting],
                                        bundleId: String) -> [String] {
-        guard !settings.isEmpty, !bundleId.isEmpty,
-              let defaults = UserDefaults(suiteName: bundleId) else { return [] }
-        let store = HostDefaultsStore(defaults: defaults)
+        guard !settings.isEmpty,
+              let store = HostDefaultsStore.forApp(bundleId: bundleId) else { return [] }
         var cleared: [String] = []
         for setting in settings where HostSettings.hasOverride(setting, store: store) {
             HostSettings.clearOverride(setting, store: store)

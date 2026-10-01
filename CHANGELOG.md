@@ -22,7 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - A setting changed in the app's Settings window no longer shadows a later `update` of the
   same setting: `update` drops the in-app override for each setting it explicitly sets (and
   says which) — including the background color a changed `--url` re-resolves from the new
-  site — leaving the ones it didn't mention alone. (#118)
+  site — leaving the ones it didn't mention alone. An interactive `update` now seeds its
+  prompts from the settings currently in effect rather than from the baked defaults, so
+  pressing Enter through them no longer brings back a setting you had changed in the app.
+  (#118)
 - Menu items are validated again: Back, Forward, Copy Current URL, Toggle Reader View and
   Open URL from Clipboard are greyed out when they'd do nothing, instead of being
   permanently enabled and failing silently when used. (#116)
