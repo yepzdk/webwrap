@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- README now matches the code: the icon chain includes the `og:image` step and the
+  generated fallback icon, ⌘⇧C (Copy Current URL) is documented, `--open-any-url`'s
+  implication of `--handle-urls` is stated, Restore Defaults is described as also
+  resetting the page zoom, `update`'s re-signing is spelled out, and `list`'s
+  `(handler-only)` label is shown. (#120)
+
 ## [0.9.1] - 2026-09-10
 
 ### Changed
