@@ -61,6 +61,54 @@ enum HostSettings {
         static let readerHistory = "webwrap.reader.history"
     }
 
+    /// A setting that both `update` and the in-app Settings window can change, paired
+    /// with the override keys backing it.
+    ///
+    /// The two live in different places — `update` rewrites the baked plist default, the
+    /// Settings window writes an override — and the override always wins, so an update
+    /// that didn't clear it would be invisible in the app (#118). `update` clears the
+    /// override for each setting it explicitly sets.
+    enum Setting: CaseIterable {
+        case toolbar
+        case toolbarStyle
+        case progressBar
+        case backgroundColor
+        case userAgent
+
+        /// How the setting is named in `update`'s output, matching its change-summary line.
+        var label: String {
+            switch self {
+            case .toolbar: return "Toolbar"
+            case .toolbarStyle: return "Toolbar size"
+            case .progressBar: return "Progress line"
+            case .backgroundColor: return "Background"
+            case .userAgent: return "User agent"
+            }
+        }
+
+        /// The keys holding this setting's override — two for the tri-state ones, whose
+        /// "set" marker is separate from the value.
+        var overrideKeys: [String] {
+            switch self {
+            case .toolbar: return [Key.toolbar]
+            case .toolbarStyle: return [Key.toolbarStyle]
+            case .progressBar: return [Key.progressBar]
+            case .backgroundColor: return [Key.backgroundColorSet, Key.backgroundColor]
+            case .userAgent: return [Key.userAgentSet, Key.userAgent]
+            }
+        }
+    }
+
+    /// Whether the user has overridden `setting` in the app's Settings window.
+    static func hasOverride(_ setting: Setting, store: Store) -> Bool {
+        setting.overrideKeys.contains { store.hasValue(forKey: $0) }
+    }
+
+    /// Drops the override for `setting`, so it falls back to its baked default again.
+    static func clearOverride(_ setting: Setting, store: Store) {
+        for key in setting.overrideKeys { store.remove(forKey: key) }
+    }
+
     /// The minimal read/write surface `HostSettings` needs from a key-value store.
     /// `UserDefaults` satisfies this directly; tests pass an in-memory implementation.
     protocol Store: AnyObject {
@@ -111,6 +159,23 @@ enum HostSettings {
     static func userAgent(store: Store, bakedDefault: String?) -> String? {
         guard store.bool(forKey: Key.userAgentSet) else { return bakedDefault }
         return store.string(forKey: Key.userAgent).flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    /// The config as the app actually runs it: the baked plist values with every
+    /// overridable setting resolved through `store`.
+    ///
+    /// `update` uses this to seed its interactive prompts, so pressing Enter through them
+    /// keeps what the app is doing now instead of reviving a baked default the user had
+    /// already switched off in the Settings window. Only the five `Setting` cases differ
+    /// from the baked config — identity and build settings have no override.
+    static func effectiveConfig(_ baked: AppConfig, store: Store) -> AppConfig {
+        baked.applying(
+            showToolbar: toolbar(store: store, bakedDefault: baked.showToolbar),
+            toolbarStyle: toolbarStyle(store: store, bakedDefault: baked.toolbarStyle),
+            progressBar: progressBar(store: store, bakedDefault: baked.progressBar),
+            backgroundColor: .some(backgroundColor(store: store,
+                                                   bakedDefault: baked.backgroundColor)),
+            userAgent: .some(userAgent(store: store, bakedDefault: baked.userAgent)))
     }
 
     // MARK: - Page zoom
@@ -190,13 +255,9 @@ enum HostSettings {
 
     /// Clears all overrides so every setting falls back to its baked plist default.
     static func restoreDefaults(store: Store) {
-        store.remove(forKey: Key.toolbar)
-        store.remove(forKey: Key.toolbarStyle)
-        store.remove(forKey: Key.progressBar)
-        store.remove(forKey: Key.backgroundColorSet)
-        store.remove(forKey: Key.backgroundColor)
-        store.remove(forKey: Key.userAgentSet)
-        store.remove(forKey: Key.userAgent)
+        // Driven by `Setting.allCases` so a new overridable setting is covered by both
+        // this and `update`'s override clearing, rather than by one of them.
+        for setting in Setting.allCases { clearOverride(setting, store: store) }
         store.remove(forKey: Key.zoom)
         store.remove(forKey: Key.readerSettings)
         // NOT the reader history: it's user-generated data, not a presentation default,
@@ -211,6 +272,17 @@ final class HostDefaultsStore: HostSettings.Store {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+    }
+
+    /// The override store of a *generated app*, for code running outside it — `update`
+    /// reads and clears the overrides as the CLI, not as the app. An app's `UserDefaults`
+    /// domain is its bundle identifier, which `update` keeps stable. Nil when there's no
+    /// usable domain to address.
+    static func forApp(bundleId: String) -> HostDefaultsStore? {
+        guard !bundleId.isEmpty, let defaults = UserDefaults(suiteName: bundleId) else {
+            return nil
+        }
+        return HostDefaultsStore(defaults: defaults)
     }
 
     func bool(forKey key: String) -> Bool { defaults.bool(forKey: key) }

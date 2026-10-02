@@ -79,13 +79,72 @@ final class OptionDefaultsForUpdateTests: XCTestCase {
     }
 
     func testIconAndSigningAreNotSeededFromConfig() {
-        // Neither is persisted, so the seed is "keep existing" icon (nil) and ad-hoc signing.
+        // Neither is in the plist, so the seed is "keep existing" icon (nil) and — with
+        // nothing read off the bundle's signature — ad-hoc signing.
         let seed = OptionDefaults.forUpdate(existing: existing)
         XCTAssertNil(seed.iconPath)
         XCTAssertFalse(seed.noSign)
         XCTAssertNil(seed.signIdentity)
         XCTAssertFalse(seed.notarize)
         XCTAssertNil(seed.notaryProfile)
+    }
+
+    func testSigningIsSeededFromTheBundlesOwnSignature() {
+        // Read from `codesign`/`stapler` by the caller, so the prompts default to
+        // re-signing as before instead of downgrading to ad-hoc (#117).
+        let seed = OptionDefaults.forUpdate(
+            existing: existing, signIdentity: "Developer ID Application: X (TEAMID)",
+            notarize: true)
+        XCTAssertEqual(seed.signIdentity, "Developer ID Application: X (TEAMID)")
+        XCTAssertTrue(seed.notarize)
+        // The notary profile isn't recoverable from the bundle — it's always re-entered.
+        XCTAssertNil(seed.notaryProfile)
+    }
+}
+
+/// Which in-app Settings overrides a flag-driven `update` drops (#118).
+final class SettingsToResetTests: XCTestCase {
+    private func reset(toolbar: Bool? = nil, toolbarStyle: ToolbarStyle? = nil,
+                       progressBar: Bool? = nil,
+                       backgroundColor: String? = nil, clearBackgroundColor: Bool = false,
+                       backgroundChanged: Bool = false,
+                       userAgent: String? = nil, clearUserAgent: Bool = false)
+        -> [HostSettings.Setting] {
+        OptionDefaults.settingsToReset(
+            toolbar: toolbar, toolbarStyle: toolbarStyle, progressBar: progressBar,
+            backgroundColor: backgroundColor, clearBackgroundColor: clearBackgroundColor,
+            backgroundChanged: backgroundChanged,
+            userAgent: userAgent, clearUserAgent: clearUserAgent)
+    }
+
+    func testAnUpdateThatSetsNothingResetsNothing() {
+        // `update --width 1400` must not throw away in-app choices it never mentioned.
+        XCTAssertEqual(reset(), [])
+    }
+
+    func testEachFlagResetsOnlyItsOwnSetting() {
+        XCTAssertEqual(reset(toolbar: true), [.toolbar])
+        // Explicitly turning a setting off counts too — `false` is still a value.
+        XCTAssertEqual(reset(progressBar: false), [.progressBar])
+        XCTAssertEqual(reset(toolbarStyle: .compact), [.toolbarStyle])
+        XCTAssertEqual(reset(backgroundColor: "#1a73e8"), [.backgroundColor])
+        XCTAssertEqual(reset(userAgent: "chrome"), [.userAgent])
+    }
+
+    func testClearingFlagsCountAsSettingTheValue() {
+        XCTAssertEqual(reset(clearBackgroundColor: true), [.backgroundColor])
+        XCTAssertEqual(reset(clearUserAgent: true), [.userAgent])
+    }
+
+    func testBackgroundFollowingAChangedURLCountsAsSettingIt() {
+        // `update --url <new>` adopts the new site's manifest color without a
+        // background flag; an in-app override must not keep shadowing it.
+        XCTAssertEqual(reset(backgroundChanged: true), [.backgroundColor])
+    }
+
+    func testSeveralFlagsAtOnce() {
+        XCTAssertEqual(reset(toolbar: true, toolbarStyle: .compact, userAgent: "edge"),
+                       [.toolbar, .toolbarStyle, .userAgent])
     }
 }
 

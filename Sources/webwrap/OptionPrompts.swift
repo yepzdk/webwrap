@@ -64,10 +64,13 @@ enum OptionDefaults {
             notarize: notarize, notaryProfile: notaryProfile)
     }
 
-    /// Seed for interactive `update`, taken from the app's persisted config. Icon and signing
-    /// aren't persisted, so the icon seed is nil ("keep existing") and signing defaults to
-    /// ad-hoc — re-entered each time.
-    static func forUpdate(existing: AppConfig) -> OptionSeed {
+    /// Seed for interactive `update`, taken from the app's persisted config. The icon isn't
+    /// persisted, so its seed is nil ("keep existing"). Signing isn't persisted either, but
+    /// it is readable from the bundle's own signature — the caller passes what it found, so
+    /// the prompts default to re-signing with the same identity rather than to ad-hoc
+    /// (#117). The notary profile can't be recovered, so it's always re-entered.
+    static func forUpdate(existing: AppConfig, signIdentity: String? = nil,
+                          notarize: Bool = false) -> OptionSeed {
         OptionSeed(
             width: existing.width, height: existing.height, toolbar: existing.showToolbar,
             toolbarStyle: existing.toolbarStyle,
@@ -77,7 +80,26 @@ enum OptionDefaults {
             reader: existing.reader,
             iconPath: nil, backgroundColor: existing.backgroundColor,
             userAgent: existing.userAgent,
-            noSign: false, signIdentity: nil, notarize: false, notaryProfile: nil)
+            noSign: false, signIdentity: signIdentity, notarize: notarize, notaryProfile: nil)
+    }
+
+    /// What a flag-driven `update` signs the rebuilt bundle with, and whether that came
+    /// from the existing app rather than the command line.
+    ///
+    /// Explicit flags win: `--sign` sets the identity, `--no-sign` skips signing. With
+    /// neither, a Developer ID signature found on the existing bundle is carried over, so
+    /// a routine `update --width 1400` can't silently return a distributed app ad-hoc
+    /// signed (#117). The carry-over is declined when `isAvailable` says the identity
+    /// isn't in this user's keychain — signing with it would fail mid-rebuild, and an
+    /// ad-hoc app is better than no app. Pure — the caller reads the identity off the
+    /// bundle and supplies the keychain probe.
+    static func resolveUpdateSigning(noSign: Bool, sign: String?, existingIdentity: String?,
+                                     isAvailable: (String) -> Bool)
+        -> (signIdentity: String?, carriedOver: Bool) {
+        if noSign { return (nil, false) }
+        if let sign { return (sign, false) }
+        guard let existingIdentity, isAvailable(existingIdentity) else { return (nil, false) }
+        return (existingIdentity, true)
     }
 
     /// Resolves what background color a flag-driven `update` should apply, as the
@@ -103,6 +125,32 @@ enum OptionDefaults {
         if clear { return .some(nil) }
         if let explicit { return .some(explicit) }
         return nil
+    }
+
+    /// The presentation settings a flag-driven `update` explicitly set, and whose in-app
+    /// Settings override therefore has to go: an explicit `--toolbar` should beat a stale
+    /// in-app toggle, which would otherwise shadow the freshly baked default and make the
+    /// update look like it did nothing (#118). Settings the command line didn't mention
+    /// keep whatever the user chose in the app. Pure.
+    ///
+    /// The background is the one setting an update can change without a flag: a new
+    /// `--url` adopts the new site's manifest color, so `backgroundChanged` (the merged
+    /// color against the existing one) counts as setting it too.
+    static func settingsToReset(toolbar: Bool?, toolbarStyle: ToolbarStyle?,
+                                progressBar: Bool?,
+                                backgroundColor: String?, clearBackgroundColor: Bool,
+                                backgroundChanged: Bool,
+                                userAgent: String?, clearUserAgent: Bool)
+        -> [HostSettings.Setting] {
+        var settings: [HostSettings.Setting] = []
+        if toolbar != nil { settings.append(.toolbar) }
+        if toolbarStyle != nil { settings.append(.toolbarStyle) }
+        if progressBar != nil { settings.append(.progressBar) }
+        if backgroundColor != nil || clearBackgroundColor || backgroundChanged {
+            settings.append(.backgroundColor)
+        }
+        if userAgent != nil || clearUserAgent { settings.append(.userAgent) }
+        return settings
     }
 
     /// `--open-any-url` only means anything when URL handling is on, so off-domain access is

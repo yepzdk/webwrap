@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- Incoming links are no longer rewritten by a `?url=`/`?u=`/`?q=` parameter that only
+  looked like a redirect: query unwrapping now happens on known redirector hosts only,
+  a host such as `google.app.dev` no longer passes as Google's redirector, and a link
+  whose cleaned form falls outside the app's site opens as it arrived instead of being
+  dropped. (#119)
+- `update` no longer replaces a Developer ID signature with an ad-hoc one: the identity is
+  read from the app's own signature and reused unless `--sign` or `--no-sign` says
+  otherwise, the change summary now always says what the app will be signed with, and a
+  stapled notarization ticket that the rebuild can't keep is called out. On a Mac without
+  that identity the update is ad-hoc signed with a warning rather than failing partway
+  through and leaving no app. (#117)
+- A setting changed in the app's Settings window no longer shadows a later `update` of the
+  same setting: `update` drops the in-app override for each setting it explicitly sets (and
+  says which) — including the background color a changed `--url` re-resolves from the new
+  site — leaving the ones it didn't mention alone. An interactive `update` now seeds its
+  prompts from the settings currently in effect rather than from the baked defaults, so
+  pressing Enter through them no longer brings back a setting you had changed in the app.
+  (#118)
+- Menu items are validated again: Back, Forward, Copy Current URL, Toggle Reader View and
+  Open URL from Clipboard are greyed out when they'd do nothing, instead of being
+  permanently enabled and failing silently when used. (#116)
+
 ## [0.9.1] - 2026-09-10
 
 ### Changed

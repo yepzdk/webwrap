@@ -107,7 +107,10 @@ struct Update: ParsableCommand {
     var force: Bool = false
 
     func run() throws {
-        try Create.validateSigning(noSign: noSign, sign: sign, notarize: notarize, notaryProfile: notaryProfile)
+        // `--notarize` may rely on an identity carried over from the existing bundle, which
+        // isn't known until it's been read; the resolved combination is validated below.
+        try Create.validateSigning(noSign: noSign, sign: sign, notarize: notarize,
+                                   notaryProfile: notaryProfile, identityMayBeInferred: true)
         try Create.validateExclusive(value: backgroundColor, clear: noBackgroundColor,
                                      flag: "background-color")
         try Create.validateExclusive(value: userAgent, clear: noUserAgent, flag: "user-agent")
@@ -123,6 +126,10 @@ struct Update: ParsableCommand {
         guard let existing = AppConfig.read(fromBundle: appPath) else {
             throw ValidationError("\(appPath) is not a webwrap app (no WebWrapURL in its Info.plist).")
         }
+        // Signing isn't baked into the Info.plist like the rest of the config, so it's read
+        // off the bundle's own signature — otherwise the rebuild below would re-sign a
+        // distributed app ad-hoc every time (#117).
+        let existingSigning = BundleSigning.read(bundlePath: appPath)
 
         if let url { try Create.validate(url: url) }
         if let name { try Create.validate(name: name) }
@@ -148,6 +155,12 @@ struct Update: ParsableCommand {
         var buildSign = sign
         var buildNotarize = notarize
         var buildNotaryProfile = notaryProfile
+        // Whether the identity below came from the existing bundle rather than a flag,
+        // so the change summary can say so.
+        var signingCarriedOver = false
+        // The settings this update is explicitly setting, whose in-app Settings override
+        // has to be dropped for the newly baked default to take effect (#118).
+        var settingsToReset: [HostSettings.Setting] = []
 
         if mode == .interactive {
             Prompt.intro("Updating \(existing.name) — current settings shown as defaults.")
@@ -171,9 +184,26 @@ struct Update: ParsableCommand {
                 throw CleanExit.message("Aborted — no changes made.")
             }
             try Create.validate(name: resolvedName)
+            // Seeded through the same resolver as the flag path, so the signing prompt
+            // never defaults to an identity this Mac can't sign with (#117).
+            let seedSigning = OptionDefaults.resolveUpdateSigning(
+                noSign: false, sign: nil, existingIdentity: existingSigning.identity,
+                isAvailable: BundleSigning.isAvailableForSigning)
+            if let identity = existingSigning.identity, seedSigning.signIdentity == nil {
+                Self.warnIdentityUnavailable(identity)
+            }
+            // The prompts start from what the app is actually doing: an in-app Settings
+            // override beats the baked plist default, so pressing Enter through them keeps
+            // the current look instead of reviving a setting the user switched off in the
+            // app. Only the prompts are seeded this way — the change summary below still
+            // compares against the baked config.
+            let effective = HostDefaultsStore.forApp(bundleId: existing.bundleId)
+                .map { HostSettings.effectiveConfig(existing, store: $0) } ?? existing
+            var updateSeed = OptionDefaults.forUpdate(existing: effective,
+                                                      signIdentity: seedSigning.signIdentity,
+                                                      notarize: existingSigning.isStapled)
             // If the URL changed, default the background prompt to the new site's manifest
             // color so re-resolution is the interactive default too (still editable).
-            var updateSeed = OptionDefaults.forUpdate(existing: existing)
             if resolvedURL != existing.url {
                 updateSeed.backgroundColor = Self.resolveManifestBackground(forURL: resolvedURL)
             }
@@ -197,6 +227,9 @@ struct Update: ParsableCommand {
             buildSign = seed.signIdentity
             buildNotarize = seed.notarize
             buildNotaryProfile = seed.notaryProfile
+            // Every presentation setting was just confirmed at a prompt, so all of them
+            // count as explicitly set.
+            settingsToReset = HostSettings.Setting.allCases
         } else {
             // --open-any-url implies URL handling, so turning it on also turns handling on
             // (otherwise the setting would be inert). Only forces it when the user is
@@ -221,6 +254,24 @@ struct Update: ParsableCommand {
                                            explicit: userAgent, clear: noUserAgent),
                                        handleURLs: effectiveHandleURLs, openAnyURL: openAnyUrl,
                                        externalLinks: externalLinks, reader: reader)
+
+            let signing = OptionDefaults.resolveUpdateSigning(
+                noSign: noSign, sign: sign, existingIdentity: existingSigning.identity,
+                isAvailable: BundleSigning.isAvailableForSigning)
+            buildSign = signing.signIdentity
+            signingCarriedOver = signing.carriedOver
+            // Without --no-sign/--sign, a present identity can only resolve to nil by
+            // failing the keychain probe — the app comes back ad-hoc, so say why.
+            if !noSign, sign == nil, let identity = existingSigning.identity,
+               signing.signIdentity == nil {
+                Self.warnIdentityUnavailable(identity)
+            }
+
+            settingsToReset = OptionDefaults.settingsToReset(
+                toolbar: toolbar, toolbarStyle: toolbarStyleFlag, progressBar: progressBar,
+                backgroundColor: backgroundColor, clearBackgroundColor: noBackgroundColor,
+                backgroundChanged: merged.backgroundColor != existing.backgroundColor,
+                userAgent: userAgent, clearUserAgent: noUserAgent)
         }
 
         try Create.validateSigning(noSign: buildNoSign, sign: buildSign,
@@ -264,8 +315,26 @@ struct Update: ParsableCommand {
             changes.append("User agent → \(merged.userAgent ?? "safari (default)")")
         }
         if let iconOverride { changes.append("Icon → \(iconOverride)") }
+        // Always listed, never conditional on a difference: the bundle is rebuilt and
+        // re-signed every time, so this is the one line that says what the app will be
+        // signed with when it comes back (#117).
+        changes.append("Signing → " + Create.signingDescription(
+            noSign: buildNoSign, sign: buildSign, notarize: buildNotarize)
+            + (signingCarriedOver ? " (carried over from the existing app)" : ""))
         print("Updating \(existing.name) at \(appPath):")
         for c in changes { print("  • \(c)") }
+
+        // The notary profile isn't recoverable from the bundle, so a stapled app can only
+        // be re-notarized by asking for it again; say so rather than quietly unstapling.
+        if existingSigning.isStapled && !buildNotarize {
+            FileHandle.standardError.write(Data("""
+
+                Warning: this app has a stapled notarization ticket, and the rebuild \
+                cannot keep it. Pass --notarize --notary-profile <name> to notarize the \
+                updated app, or recipients will see Gatekeeper warnings.
+
+                """.utf8))
+        }
 
         if !force {
             guard Prompt.isInteractive else {
@@ -326,12 +395,47 @@ struct Update: ParsableCommand {
             try? fm.removeItem(atPath: appPath)
         }
         print("✓ Updated \(newPath)")
+        for label in Self.clearOverrides(for: settingsToReset, bundleId: existing.bundleId) {
+            print("  • Dropped the in-app Settings override for \(label), so the new value applies")
+        }
+    }
+
+    /// Removes the in-app Settings overrides for `settings`, returning the labels of the
+    /// ones that were actually set.
+    ///
+    /// The overrides live in the app's own `UserDefaults` domain (see
+    /// `HostDefaultsStore.forApp(bundleId:)`, which the interactive seed reads through
+    /// too). Done after a successful build, so a failed update leaves the app's settings
+    /// exactly as they were.
+    private static func clearOverrides(for settings: [HostSettings.Setting],
+                                       bundleId: String) -> [String] {
+        guard !settings.isEmpty,
+              let store = HostDefaultsStore.forApp(bundleId: bundleId) else { return [] }
+        var cleared: [String] = []
+        for setting in settings where HostSettings.hasOverride(setting, store: store) {
+            HostSettings.clearOverride(setting, store: store)
+            cleared.append(setting.label)
+        }
+        return cleared
     }
 
     /// Re-resolves a site's manifest launch background color (nil if the site has none or
     /// the URL can't be resolved). Used to make the background follow a changed `--url`.
     private static func resolveManifestBackground(forURL url: String) -> String? {
         IconResolver(urlString: url)?.resolveWithMetadata().metadata.launchBackgroundColor
+    }
+
+    /// Says that the app's own Developer ID identity can't be re-used here, because
+    /// signing silently dropping to ad-hoc is the kind of thing you want to hear about
+    /// before you hand the app on (#117).
+    private static func warnIdentityUnavailable(_ identity: String) {
+        FileHandle.standardError.write(Data("""
+
+            Warning: this app is signed with "\(identity)", which isn't available for \
+            signing on this Mac, so the update will be ad-hoc signed instead. Install \
+            that identity (certificate and private key) to keep the signature.
+
+            """.utf8))
     }
 }
 
@@ -685,11 +789,17 @@ struct Create: ParsableCommand {
     }
 
     /// Validates the signing/notarization flag combination. Pure — no I/O.
-    static func validateSigning(noSign: Bool, sign: String?, notarize: Bool, notaryProfile: String?) throws {
+    ///
+    /// `identityMayBeInferred` relaxes the "notarize needs an identity" rule for `update`'s
+    /// first pass, where the identity may still be carried over from the existing bundle;
+    /// the same rule is enforced on the resolved values once that's known.
+    static func validateSigning(noSign: Bool, sign: String?, notarize: Bool,
+                                notaryProfile: String?,
+                                identityMayBeInferred: Bool = false) throws {
         if noSign && sign != nil {
             throw ValidationError("`--no-sign` and `--sign` are mutually exclusive.")
         }
-        if notarize && sign == nil {
+        if notarize && sign == nil && !identityMayBeInferred {
             throw ValidationError("`--notarize` requires `--sign` (a Developer ID identity).")
         }
         if notarize && (notaryProfile?.isEmpty ?? true) {

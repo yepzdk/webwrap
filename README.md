@@ -239,16 +239,18 @@ Run with just the app path on a terminal and `update` walks the same prompts as 
 | `--reader` / `--no-reader` | Open pages in the reader view automatically, or only via ⇧⌘R (current setting kept if omitted) |
 | `--background-color` / `--no-background-color` | Set or clear the window background color. If omitted, it follows the new `--url`'s manifest color when the URL changes, otherwise the current setting is kept |
 | `--user-agent` / `--no-user-agent` | Set the browser identity (`safari`/`chrome`/`edge` or a custom UA string) or reset it to the Safari default (current setting kept if omitted) |
-| `--sign`, `--notarize`, `--notary-profile`, `--no-sign` | Signing, same as `create` |
+| `--sign`, `--notarize`, `--notary-profile`, `--no-sign` | Signing, same as `create`. If omitted, a Developer ID signature on the existing app is carried over |
 | `--force` | Skip the confirmation prompt |
 
 The session survives because it's keyed to the app's bundle identifier, which `update` keeps stable even across a URL or name change. `update` refuses any bundle that isn't a webwrap app.
+
+The bundle is rebuilt and re-signed on every update, so the change summary always ends with a `Signing →` line saying what it will come back as. A Developer ID identity already on the app is read from its signature and reused, so a routine update can't downgrade a distributed app to ad-hoc; `--sign` picks a different identity and `--no-sign` opts out. **Notarization is the exception**: the notary profile isn't stored anywhere in the bundle, so repeat `--notarize --notary-profile <name>` on each update of an app you distribute — `update` warns when it's about to drop a stapled ticket.
 
 ### Settings inside the app
 
 For the presentation-level options you don't need the terminal: every generated app has a **Settings** window (⌘, , or the app menu) to toggle the navigation toolbar (and its size, regular or compact), the page-load progress bar, the window background color, and the browser identity (Safari/Chrome/Edge or a custom user-agent string). Changes apply live — no relaunch — and persist across launches. **Restore Defaults** reverts to the values baked in at create/update time.
 
-These in-app settings are overrides layered on top of the baked-in defaults, so an `update` that changes, say, the background color updates the default the app falls back to. Identity (URL, name, icon) and signing remain `create`/`update`-only.
+These in-app settings are overrides layered on top of the baked-in defaults, so an `update` that changes, say, the background color updates the default the app falls back to. An explicit flag also drops the matching in-app override, so `update --toolbar` shows the toolbar even if you'd switched it off in the Settings window (the CLI reports each override it dropped); settings the command line doesn't mention keep whatever you chose in the app. An interactive `update` confirms every presentation setting at a prompt, so it drops all of their overrides — its prompts start from the values currently in effect, so pressing Enter through them keeps what you set in the app. Identity (URL, name, icon) and signing remain `create`/`update`-only.
 
 ## Sharing generated apps with other Macs
 
