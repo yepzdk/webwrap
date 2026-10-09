@@ -50,6 +50,21 @@ final class SigningValidationTests: XCTestCase {
         XCTAssertThrowsError(try validate(sign: "Developer ID Application: X",
                                           notarize: true, notaryProfile: ""))
     }
+
+    func testNotarizeWithoutSignIsAllowedWhenTheIdentityMayBeInferred() throws {
+        // `update --notarize --notary-profile x` on a Developer-ID-signed app: the
+        // identity comes from the bundle, so this pass can't demand `--sign` (#117).
+        XCTAssertNoThrow(try Create.validateSigning(
+            noSign: false, sign: nil, notarize: true, notaryProfile: "webwrap",
+            identityMayBeInferred: true))
+        // The other two rules still apply.
+        XCTAssertThrowsError(try Create.validateSigning(
+            noSign: true, sign: "Developer ID Application: X", notarize: false,
+            notaryProfile: nil, identityMayBeInferred: true))
+        XCTAssertThrowsError(try Create.validateSigning(
+            noSign: false, sign: nil, notarize: true, notaryProfile: nil,
+            identityMayBeInferred: true))
+    }
 }
 
 final class SigningDescriptionTests: XCTestCase {
