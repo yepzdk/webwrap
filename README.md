@@ -21,6 +21,10 @@ Generated apps keep you logged in across relaunches, just like a normal browser 
 
 On **macOS 14+**, each app gets its *own isolated* session keyed to its bundle identifier, so two webwrap apps can hold two independent logins (e.g. two Microsoft 365 accounts) without interfering. On **macOS 13**, apps share the system default persistent store — logins still persist, they're just not isolated between apps.
 
+Sites behind HTTP authentication (Basic, Digest or NTLM, e.g. a Traefik `basicAuth` middleware) get a login sheet. With **Remember this password** ticked (the default), the password goes into your login keychain and is sent automatically on later launches; untick it to keep it until the app quits. **Cancel** leaves the server's 401 page, and Reload asks again. Saved passwords show up in Keychain Access under the site's host.
+
+An ad-hoc signed app gets a new signature on every `update`, so the next launch asks for your keychain password before it can read a saved site password. Choose **Always Allow** to stop it asking until the next update.
+
 ## Install
 
 Via the [yepzdk/homebrew-tools](https://github.com/yepzdk/homebrew-tools) tap (downloads a prebuilt universal binary — no Xcode needed):

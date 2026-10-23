@@ -124,6 +124,19 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
     private weak var userAgentPopup: NSPopUpButton?
     private weak var userAgentField: NSTextField?
 
+    /// HTTP authentication challenges waiting on the login sheet, oldest first. The first
+    /// is the one on screen; when it's answered, every queued challenge for the same
+    /// protection space (a page's subresources hitting the same 401) gets the same answer,
+    /// so one login doesn't stack a sheet per request.
+    private var pendingAuth: [PendingAuth] = []
+    private var isShowingAuthSheet = false
+
+    private struct PendingAuth {
+        let challenge: URLAuthenticationChallenge
+        let prompt: HostAuth.Prompt
+        let completion: (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+    }
+
     private func info(_ key: String) -> String? {
         Bundle.main.object(forInfoDictionaryKey: key) as? String
     }
@@ -1250,6 +1263,94 @@ private final class HostDelegate: NSObject, NSApplicationDelegate, WKNavigationD
             }
         }
         return nil
+    }
+
+    // MARK: - HTTP authentication (Basic/Digest/NTLM)
+
+    /// Answers password challenges with a login sheet; everything else (server trust,
+    /// client certificates, Negotiate) keeps WebKit's default handling. The decision is the
+    /// pure `HostAuth.action`.
+    func webView(_ webView: WKWebView,
+                 didReceive challenge: URLAuthenticationChallenge,
+                 completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        let space = challenge.protectionSpace
+        let proposed = challenge.proposedCredential
+        switch HostAuth.action(method: space.authenticationMethod,
+                               host: space.host,
+                               port: space.port,
+                               scheme: space.protocol,
+                               previousFailureCount: challenge.previousFailureCount,
+                               proposedUser: proposed?.user,
+                               proposedHasPassword: proposed?.hasPassword ?? false,
+                               receivesCredentialSecurely: space.receivesCredentialSecurely) {
+        case .performDefaultHandling:
+            completionHandler(.performDefaultHandling, nil)
+        case .useProposed:
+            completionHandler(.useCredential, proposed)
+        case .prompt(let prompt):
+            pendingAuth.append(PendingAuth(challenge: challenge, prompt: prompt,
+                                           completion: completionHandler))
+            presentNextAuthPrompt()
+        }
+    }
+
+    /// Shows the login sheet for the oldest queued challenge, unless one is already up.
+    private func presentNextAuthPrompt() {
+        guard !isShowingAuthSheet, let current = pendingAuth.first else { return }
+        isShowingAuthSheet = true
+
+        let alert = NSAlert()
+        alert.messageText = HostAuth.title(for: current.prompt)
+        alert.informativeText = HostAuth.message(for: current.prompt)
+        // First button is the default (Return); a button titled "Cancel" gets Escape.
+        alert.addButton(withTitle: "Log In")
+        alert.addButton(withTitle: "Cancel")
+
+        let fieldWidth: CGFloat = 260
+        let userField = NSTextField(string: current.prompt.username ?? "")
+        userField.placeholderString = "User name"
+        let passwordField = NSSecureTextField(string: "")
+        passwordField.placeholderString = "Password"
+        let remember = NSButton(checkboxWithTitle: "Remember this password", target: nil, action: nil)
+        remember.state = .on
+        for field in [userField, passwordField] {
+            field.translatesAutoresizingMaskIntoConstraints = false
+            field.widthAnchor.constraint(equalToConstant: fieldWidth).isActive = true
+        }
+        userField.nextKeyView = passwordField
+        passwordField.nextKeyView = remember
+
+        let stack = NSStackView(views: [userField, passwordField, remember])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 8
+        // NSAlert sizes its accessory view from the frame, not constraints.
+        stack.frame = NSRect(origin: .zero, size: stack.fittingSize)
+        alert.accessoryView = stack
+        alert.layout()
+        // A retry keeps the rejected user name, so focus goes straight to the password.
+        alert.window.initialFirstResponder = userField.stringValue.isEmpty ? userField : passwordField
+
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard let self else { return }
+            self.isShowingAuthSheet = false
+            let space = current.challenge.protectionSpace
+            let answered = self.pendingAuth.filter { $0.challenge.protectionSpace == space }
+            self.pendingAuth.removeAll { $0.challenge.protectionSpace == space }
+            if response == .alertFirstButtonReturn {
+                let credential = URLCredential(
+                    user: userField.stringValue,
+                    password: passwordField.stringValue,
+                    persistence: HostAuth.persistence(remember: remember.state == .on))
+                answered.forEach { $0.completion(.useCredential, credential) }
+            } else {
+                // Reject rather than cancel: `.cancelAuthenticationChallenge` fails the
+                // load with -999 and leaves a blank page whose Reload does nothing.
+                // Rejecting lets the load finish on the server's 401 page, so Reload asks again.
+                answered.forEach { $0.completion(.rejectProtectionSpace, nil) }
+            }
+            self.presentNextAuthPrompt()
+        }
     }
 
     // MARK: - Reader auto-entry (navigation delegate)
