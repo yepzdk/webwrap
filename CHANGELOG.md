@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-23
+
 ### Added
 - Sites behind HTTP authentication (Basic/Digest/NTLM) now show a login sheet instead of
   the server's 401 page, and can save the password to the keychain. (#127)
@@ -275,7 +277,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Test suite (`swift test`) covering `AppBuilder`'s pure helpers (slug, bundle id,
   `Info.plist` generation, XML escaping) plus the icon-resolution and CLI helpers.
 
-[Unreleased]: https://github.com/yepzdk/webwrap/compare/v0.9.1...HEAD
+[Unreleased]: https://github.com/yepzdk/webwrap/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/yepzdk/webwrap/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/yepzdk/webwrap/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/yepzdk/webwrap/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/yepzdk/webwrap/compare/v0.7.0...v0.8.0
