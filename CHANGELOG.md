@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- Sites behind HTTP authentication (Basic/Digest/NTLM) now show a login sheet instead of
+  the server's 401 page, and can save the password to the keychain. (#127)
+
 ### Changed
 - README now matches the code: the icon chain includes the `og:image` step and the
   generated fallback icon, ⌘⇧C (Copy Current URL) is documented, `--open-any-url`'s
