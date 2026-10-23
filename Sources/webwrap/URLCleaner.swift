@@ -4,18 +4,51 @@ import Foundation
 /// incoming links, so the app navigates straight to the destination without ever
 /// contacting the tracking host (which may be blocked, e.g. by a Pi-hole).
 ///
-/// Ported from https://github.com/yepzdk/url-cleaner with two deliberate
+/// Ported from https://github.com/yepzdk/url-cleaner with three deliberate
 /// deviations for navigation safety: OAuth-style `redirect`/`redirect_uri`
-/// parameters are never unwrapped (that would break sign-in links), and plain
+/// parameters are never unwrapped (that would break sign-in links), plain
 /// (unencoded) URLs nested in a path are never unwrapped (that would break
-/// Wayback Machine links). Pure — unit-tested.
+/// Wayback Machine links), and query unwrapping only happens on known
+/// redirector hosts (see `redirectors`). Pure — unit-tested.
 enum URLCleaner {
-    /// Query parameters that redirectors put the destination in. Only unwrapped
-    /// when the value is an absolute http(s) URL. Covers Google (`url`, `q`),
-    /// Facebook `l.php` (`u`), LinkedIn and Outlook SafeLinks (`url`), and the
-    /// long tail of `?target=`/`?dest=` style redirectors.
-    private static let redirectParams: Set<String> =
-        ["url", "u", "q", "link", "target", "dest", "destination"]
+    /// Query parameters a redirector puts the destination in. Only consulted on
+    /// the hosts below, and only unwrapped when the value is an absolute http(s)
+    /// URL. Google's `q` is deliberately absent here — it's a search parameter
+    /// far more often than a redirect target — and added back only for
+    /// `google.*/url`.
+    private static let destinationParams: Set<String> =
+        ["url", "u", "link", "target", "dest", "destination"]
+
+    /// A host that redirects through a query parameter, optionally only under a
+    /// path prefix (LinkedIn is a whole site with one redirector endpoint; the
+    /// others are dedicated hosts).
+    private struct Redirector {
+        let host: String
+        /// Path prefix the redirect lives under; nil when the whole host is one.
+        var path: String?
+    }
+
+    /// The hosts `destinationParams` applies to, matched exact-or-subdomain so
+    /// "eur01.safelinks.protection.outlook.com" is covered by the bare suffix.
+    ///
+    /// Unwrapping is limited to these because `?url=`, `?u=` and `?link=` are
+    /// ordinary application parameters everywhere else — document viewers, image
+    /// proxies, oEmbed endpoints — and rewriting those navigations sends the app
+    /// to the embedded asset instead of the page, or, under same-site scoping,
+    /// drops the link entirely (#119). Google is matched separately in
+    /// `redirectParams(for:)` because its redirector exists on every country
+    /// domain.
+    private static let redirectors: [Redirector] = [
+        Redirector(host: "l.facebook.com"),
+        Redirector(host: "lm.facebook.com"),
+        Redirector(host: "l.instagram.com"),
+        Redirector(host: "l.messenger.com"),
+        Redirector(host: "safelinks.protection.outlook.com"),
+        Redirector(host: "lnkd.in"),
+        Redirector(host: "linkedin.com", path: "/redir/"),
+        Redirector(host: "out.reddit.com"),
+        Redirector(host: "slack-redir.net"),
+    ]
 
     /// Tracking query parameters to strip, as (exact names, name prefixes) —
     /// upstream's regex list flattened. Upstream also strips a bare `p`, which is
@@ -57,11 +90,13 @@ enum URLCleaner {
         return nil
     }
 
-    /// A known redirect parameter whose value is an absolute http(s) URL.
+    /// A known redirect parameter whose value is an absolute http(s) URL — only on
+    /// a host that is actually a redirector.
     private static func destinationFromQuery(_ url: URL) -> URL? {
-        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+        guard let names = redirectParams(for: url),
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
               let items = components.queryItems else { return nil }
-        for item in items where redirectParams.contains(item.name.lowercased()) {
+        for item in items where names.contains(item.name.lowercased()) {
             if let value = item.value, let dest = URL(string: value),
                HostNavigation.isWebURL(dest), dest.host != nil {
                 return dest
@@ -70,23 +105,71 @@ enum URLCleaner {
         return nil
     }
 
+    /// The destination parameters to honour on `url`'s host, or nil when the host
+    /// isn't a redirector and its query must be left alone.
+    private static func redirectParams(for url: URL) -> Set<String>? {
+        guard let host = url.host?.lowercased(), !host.isEmpty else { return nil }
+        // Google's redirector carries the destination in `q` as well as `url`, but
+        // only under `/url` — `/search?q=` is a search, and searching for a URL
+        // must stay on the results page.
+        if isGoogleDomain(host), url.path == "/url" {
+            return destinationParams.union(["q"])
+        }
+        for redirector in redirectors
+        where host == redirector.host || host.hasSuffix("." + redirector.host) {
+            guard let path = redirector.path else { return destinationParams }
+            if url.path.hasPrefix(path) { return destinationParams }
+        }
+        return nil
+    }
+
+    /// Whether `host` is one of Google's own domains — google.com, google.dk,
+    /// google.co.uk — rather than something that merely starts with "google.".
+    /// The redirector exists on every country domain, so the suffix can't be
+    /// enumerated; instead the labels after "google" have to look like a public
+    /// suffix, which rules out the "google.com.evil.test" shape a bare prefix
+    /// check would accept.
+    ///
+    /// A single label is any ccTLD/gTLD of 2–3 characters. Two labels have to be
+    /// one of the second-level registries Google uses under a ccTLD, because
+    /// `app.dev` and `ai.xyz` are ordinary registrations whose "google" subdomain
+    /// anyone can take.
+    private static func isGoogleDomain(_ host: String) -> Bool {
+        let bare = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+        let labels = bare.split(separator: ".")
+        guard labels.first == "google" else { return false }
+        let suffix = labels.dropFirst()
+        guard (1...2).contains(suffix.count),
+              let tld = suffix.last, (2...3).contains(tld.count) else { return false }
+        guard suffix.count == 2 else { return true }
+        return googleSecondLevels.contains(String(suffix.first!))
+    }
+
+    /// The second-level labels Google registers under, e.g. google.co.uk,
+    /// google.com.au, google.com.br.
+    private static let googleSecondLevels: Set<String> =
+        ["co", "com", "net", "org", "ac", "gov", "edu"]
+
     /// A percent-encoded absolute URL embedded in the path, e.g. TLDR's
     /// `…/CL0/https:%2F%2Fwww.figma.com%2Fblog%2F…%3Futm_source=x/1/0100…`.
     /// The destination's own slashes are still encoded (%2F), so it ends at the
     /// first LITERAL `/` after the marker. Only encoded embeds are unwrapped —
     /// a plain nested `https://` is left alone (Wayback Machine links).
+    ///
+    /// Only the path is searched. An encoded URL in the *query* is an ordinary
+    /// parameter value unless the host is a known redirector, in which case
+    /// `destinationFromQuery` has already unwrapped it (#119).
     private static func encodedDestinationInPath(_ url: URL) -> URL? {
-        // Work on the raw absolute string so the encoding is still visible.
-        let raw = url.absoluteString
+        // The still-encoded path, so the markers below are visible.
+        guard let raw = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+            .percentEncodedPath else { return nil }
         let lower = raw.lowercased()
         // The scheme may have its colon encoded too (https%3A%2F%2F).
         let markers = ["https:%2f%2f", "http:%2f%2f", "https%3a%2f%2f", "http%3a%2f%2f"]
-        guard let (markerRange, _) = markers
-            .compactMap({ marker in lower.range(of: marker).map { ($0, marker) } })
-            .min(by: { $0.0.lowerBound < $1.0.lowerBound })
+        guard let markerRange = markers
+            .compactMap({ lower.range(of: $0) })
+            .min(by: { $0.lowerBound < $1.lowerBound })
         else { return nil }
-        // Never treat the URL's own scheme as an embed.
-        guard markerRange.lowerBound != lower.startIndex else { return nil }
 
         let tail = String(raw[markerRange.lowerBound...])
         let encoded = tail.split(separator: "/", maxSplits: 1,
