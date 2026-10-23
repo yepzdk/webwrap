@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- README now matches the code: the icon chain includes the `og:image` step and the
+  generated fallback icon, ⌘⇧C (Copy Current URL) is documented, `--open-any-url`'s
+  implication of `--handle-urls` is stated, Restore Defaults is described as also
+  resetting the page zoom, and `list`'s `(handler-only)` label is shown. (#120)
+
 ### Fixed
 - Incoming links are no longer rewritten by a `?url=`/`?u=`/`?q=` parameter that only
   looked like a redirect: query unwrapping now happens on known redirector hosts only,

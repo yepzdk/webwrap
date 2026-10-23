@@ -48,7 +48,9 @@ Requires macOS 13 (Ventura) or later. Building from source additionally needs th
 webwrap create --url https://outlook.office.com --name "Outlook"
 ```
 
-This writes `Outlook.app` to `/Applications`, resolving the best available icon for the site automatically — it checks the web app manifest, `apple-touch-icon`, `<link rel="icon">`, and `/favicon.ico` (in that order), falling back to a favicon service.
+This writes `Outlook.app` to `/Applications`, resolving the best available icon for the site automatically — it checks the web app manifest, `apple-touch-icon`, `<link rel="icon">`, the page's `og:image`/`twitter:image` (used only when it's close enough to square that squashing it wouldn't distort), and `/favicon.ico`, in that order, falling back to a favicon service.
+
+If every source comes up empty — an unreachable site, a site with no icon anywhere, or a handler-only app with no site at all — the app gets a **generated** icon rather than the generic macOS placeholder: a solid square with the app's initial as a monogram, in black or white for contrast. The square takes the app's background color, or a neutral slate when there's none to take — which is the usual case for a handler-only app.
 
 From the same web app manifest, `webwrap` also picks up a couple of smart defaults: it suggests the app name from the manifest's `short_name`/`name` (in interactive mode), and paints the window with the manifest's `background_color` (or `theme_color`) so launch doesn't flash white before the page loads. Both are overridable, and reading the manifest costs no extra request — it's shared with icon resolution.
 
@@ -118,7 +120,7 @@ Passing both `--url` and `--name` skips the prompts entirely and builds straight
 | `--toolbar-size` | Navigation toolbar size: `regular` or `compact` (smaller) | `regular` |
 | `--progress-bar` | Show a thin page-load progress line at the top of the window | off |
 | `--handle-urls` | Register as an http/https handler and open URLs the app is launched with (e.g. from Choosy) | off |
-| `--open-any-url` | With `--handle-urls`, also accept off-domain URLs (default: only same-site) | off |
+| `--open-any-url` | Accept off-domain URLs, not just same-site ones (turns `--handle-urls` on by itself) | off |
 | `--external-links` / `--no-external-links` | Open links that leave the site in the default browser | on |
 | `--no-url` | Create a handler-only app: no home site, opens to a built-in start page, exists to receive links (implies `--handle-urls --open-any-url`) | — |
 | `--reader` | Open pages in the distraction-free reader view automatically (⇧⌘R toggles it on any page either way) | off |
@@ -149,7 +151,7 @@ With `--handle-urls`, a generated app registers as an `http`/`https` handler and
 webwrap create -u https://github.com -n "GitHub" --handle-urls
 ```
 
-It's **off by default** so apps don't claim `http`/`https` system-wide unless you opt in. By default only **same-site** URLs are accepted (a GitHub app loads `github.com` links and ignores `example.com`); pass `--open-any-url` to let the app navigate to any URL it's handed. Rejected off-domain URLs are simply ignored — the app stays on its current page.
+It's **off by default** so apps don't claim `http`/`https` system-wide unless you opt in. By default only **same-site** URLs are accepted (a GitHub app loads `github.com` links and ignores `example.com`); pass `--open-any-url` to let the app navigate to any URL it's handed. Rejected off-domain URLs are simply ignored — the app stays on its current page. `--open-any-url` only means anything with URL handling on, so passing it alone turns `--handle-urls` on too — `create` says so in a note, `update` lists it in its change summary.
 
 Incoming links are also **cleaned before navigating** (logic ported from [url-cleaner](https://github.com/yepzdk/url-cleaner)): tracking redirects that embed the real destination — newsletter wrappers like TLDR's, Google/Facebook/SafeLinks redirects, Postmark — are unwrapped so the app goes straight to the article without ever contacting the tracking host (which your DNS blocker may be blocking anyway), and tracking parameters (`utm_*`, `fbclid`, …) are stripped. Cleaning runs before the same-site check, so a tracking link wrapping a same-site URL is accepted.
 
@@ -189,6 +191,10 @@ Want a dedicated reading app rather than a wrapped site? [WebReader](https://git
 
 Four ways through the app's history, all equivalent: the **back/forward buttons on your mouse**, a **two-finger swipe** on the trackpad (macOS routes this through System Settings → Trackpad → More Gestures → "Swipe between pages"), **⌘[ / ⌘]**, and the navigation toolbar if the app has one. **⌘⇧H** goes home, back to the URL the app was created with.
 
+### Copying the current URL
+
+A chromeless window has no address bar, so **Edit → Copy Current URL (⌘⇧C)** puts the page you're on on the clipboard, with a brief "Current URL copied" toast so the copy isn't a silent no-op. (⌘C stays plain Copy for selected content.)
+
 ### Links that leave the site
 
 By default, links you click that go **off-site** (and `target=_blank` popups) open in your **default browser** instead of navigating the app window — so a news link in an Outlook email doesn't strand the app on some article. Sign-in flows are unaffected: common SSO hosts (`login.microsoftonline.com`, `accounts.google.com`, …) and all automatic redirects stay inside the app, so logins land in the app's own session. `mailto:` and other app-scheme links are handed to macOS.
@@ -208,7 +214,7 @@ Outlook   https://outlook.office.com   /Applications
 2 apps
 ```
 
-It scans `/Applications` and `~/Applications`, identifying webwrap apps by a marker baked into their `Info.plist` — there's no separate registry to keep in sync. To remove an app, drag it to the Trash like any other.
+It scans `/Applications` and `~/Applications`, identifying webwrap apps by a marker baked into their `Info.plist` — there's no separate registry to keep in sync. Handler-only apps, which have no home site, show `(handler-only)` in the URL column. To remove an app, drag it to the Trash like any other.
 
 ## Updating an app
 
@@ -248,7 +254,7 @@ The bundle is rebuilt and re-signed on every update, so the change summary alway
 
 ### Settings inside the app
 
-For the presentation-level options you don't need the terminal: every generated app has a **Settings** window (⌘, , or the app menu) to toggle the navigation toolbar (and its size, regular or compact), the page-load progress bar, the window background color, and the browser identity (Safari/Chrome/Edge or a custom user-agent string). Changes apply live — no relaunch — and persist across launches. **Restore Defaults** reverts to the values baked in at create/update time.
+For the presentation-level options you don't need the terminal: every generated app has a **Settings** window (⌘, , or the app menu) to toggle the navigation toolbar (and its size, regular or compact), the page-load progress bar, the window background color, and the browser identity (Safari/Chrome/Edge or a custom user-agent string). Changes apply live — no relaunch — and persist across launches. **Restore Defaults** reverts those to the values baked in at create/update time, and also resets the page zoom and the reader's appearance (the reader's recents list is user data, so it's left alone — clear it from the recents panel).
 
 These in-app settings are overrides layered on top of the baked-in defaults, so an `update` that changes, say, the background color updates the default the app falls back to. An explicit flag also drops the matching in-app override, so `update --toolbar` shows the toolbar even if you'd switched it off in the Settings window (the CLI reports each override it dropped); settings the command line doesn't mention keep whatever you chose in the app. An interactive `update` confirms every presentation setting at a prompt, so it drops all of their overrides — its prompts start from the values currently in effect, so pressing Enter through them keeps what you set in the app. Identity (URL, name, icon) and signing remain `create`/`update`-only.
 
