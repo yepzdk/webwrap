@@ -46,7 +46,7 @@ Tests live in `Tests/webwrapTests` and run with `swift test` (XCTest — not swi
 
 - **Never commit to main.** Branch as `feature/issue-{number}-{description}`.
 - **Conventional Commits**: `feat:`, `fix:`, `docs:`, `refactor:`, `chore:`, etc.
-- **CHANGELOG.md** follows Keep a Changelog. Update `[Unreleased]` with every PR (`Added`/`Changed`/`Fixed`/...).
+- **CHANGELOG.md** follows Keep a Changelog, but feature and fix PRs never touch it (parallel PRs conflict on `[Unreleased]`). The PR title and body say what changed and why, written so they can become release notes; operator notes (upgrade order, secrets) go in the PR body.
 - PRs reference their issue and close it with `Closes #XX`.
 
 ## External tools used at runtime
@@ -57,7 +57,7 @@ Tests live in `Tests/webwrapTests` and run with `swift test` (XCTest — not swi
 
 Distribution is via **prebuilt universal binary**, not build-from-source:
 
-1. Bump the version in `CLI.swift` (`CommandConfiguration.version`), the `version` line in `dist/homebrew/webwrap.rb`, and the URL/filename in the formula. Move `[Unreleased]` changelog entries under a new version heading.
+1. In a release PR, bump the version in `CLI.swift` (`CommandConfiguration.version`), the `version` line in `dist/homebrew/webwrap.rb`, and the URL/filename in the formula. Write the `## [X.Y.Z] - YYYY-MM-DD` changelog section in prose from the PRs merged since the last tag (`gh pr list --state merged --search "merged:>=<last tag date>"`), grouped under Keep a Changelog headings and leaving out `chore`, `ci`, `test` and `build` changes. If an `[Unreleased]` section with entries still exists, fold them in and remove it. The release workflow uses this section as the release notes.
 2. Commit, then tag `vX.Y.Z` and push the tag. The `.github/workflows/release.yml` workflow builds a universal (arm64 + x86_64) binary on a `macos-14` runner, tarballs it as `webwrap-X.Y.Z-macos-universal.tar.gz`, and attaches it (plus a `.sha256`) to the GitHub release.
 3. The same workflow's `update-tap` job then bumps `Formula/webwrap.rb` in the `yepzdk/homebrew-tools` tap to the new release (recomputing the sha from the published asset) and pushes it — so `brew upgrade webwrap` picks it up with no manual step. The in-repo `dist/homebrew/webwrap.rb` is the canonical copy kept in sync by hand in step 1; the tap copy is what users install from. Requires a `HOMEBREW_TAP_PAT` repo secret (a PAT with contents-write on the tap; the default `GITHUB_TOKEN` can't push cross-repo).
 
